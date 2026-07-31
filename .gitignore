@@ -1,0 +1,11 @@
+.tools/
+.idea/
+.vscode/
+node_modules/
+dist/
+target/
+output/
+tmp/
+check-*.txt
+*.log
+.DS_Store

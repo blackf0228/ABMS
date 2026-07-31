@@ -1,0 +1,1611 @@
+<main class="app-shell">
+  <header class="app-header">
+    <div class="brand" aria-label="株式会社CMCソフト社内システム">
+      <img class="brand-logo" src="/CMCLogo.png" alt="CMCソフト">
+      <span class="brand-text">
+        <strong>株式会社CMCソフト社内システム</strong>
+        <small>CMC Soft Internal System</small>
+      </span>
+    </div>
+
+    <nav class="top-nav dropdown-nav" aria-label="Main navigation">
+      <div class="nav-group" [class.active]="isContractMenuActive()">
+        <button type="button" class="nav-top">
+          <span>契約管理</span>
+          <small>Contract</small>
+        </button>
+        <div class="nav-dropdown">
+          <button type="button" (click)="switchView('contractList')">契約一覧</button>
+        </div>
+      </div>
+
+      <div class="nav-group" [class.active]="isSalesMenuActive()">
+        <button type="button" class="nav-top">
+          <span>売上管理</span>
+          <small>Sales</small>
+        </button>
+        <div class="nav-dropdown">
+          <button type="button" (click)="switchView('salesList')">売上一覧</button>
+          <button type="button" (click)="switchView('salesAnalysis')">売上集計解析</button>
+          <button type="button" (click)="switchView('profitAnalysis')">利益解析</button>
+        </div>
+      </div>
+
+      <div class="nav-group" [class.active]="isPayrollMenuActive()">
+        <button type="button" class="nav-top">
+          <span>給与管理</span>
+          <small>Payroll</small>
+        </button>
+        <div class="nav-dropdown">
+          <button type="button" (click)="switchView('salaryConditions')">月給条件作成</button>
+          <button type="button" (click)="switchView('payrollSearch')">社員給与明細</button>
+        </div>
+      </div>
+
+      <div class="nav-group" [class.active]="isAttendanceMenuActive()">
+        <button type="button" class="nav-top">
+          <span>勤怠管理</span>
+          <small>Attendance</small>
+        </button>
+        <div class="nav-dropdown">
+          <button type="button" (click)="switchView('attendanceSearch')">勤怠時間検索</button>
+          <button type="button" (click)="switchView('attendanceBulk')">月次一括登録</button>
+        </div>
+      </div>
+
+      <div class="nav-group" [class.active]="isCommonMenuActive()">
+        <button type="button" class="nav-top">
+          <span>共通管理</span>
+          <small>Common</small>
+        </button>
+        <div class="nav-dropdown">
+          <button type="button" (click)="switchView('customerList')">取引先一覧</button>
+          <button type="button" (click)="switchView('employeeList')">社員一覧</button>
+          <button type="button" (click)="switchView('employmentRates')">雇用保険料率</button>
+          <button type="button" (click)="switchView('socialPremiums')">保険料額表</button>
+        </div>
+      </div>
+    </nav>
+
+    <nav class="top-nav legacy-nav" aria-label="Legacy navigation">
+      <button type="button" [class.active]="activeView === 'register'" (click)="switchView('register')">
+        登録
+      </button>
+      <button type="button" [class.active]="activeView === 'search'" (click)="switchView('search')">
+        検索
+      </button>
+      <button type="button" [class.active]="activeView === 'employmentRates'" (click)="switchView('employmentRates')">
+        雇用保険料率
+      </button>
+      <button type="button" [class.active]="activeView === 'socialPremiums'" (click)="switchView('socialPremiums')">
+        保険料額表
+      </button>
+      <button type="button" [class.active]="activeView === 'salaryConditions'" (click)="switchView('salaryConditions')">
+        月給条件作成
+      </button>
+      <button type="button" [class.active]="activeView === 'payrollSearch' || activeView === 'payrollDetail'" (click)="switchView('payrollSearch')">
+        社員給与明細
+      </button>
+      <button type="button" [class.active]="activeView === 'contractList'" (click)="switchView('contractList')">
+        契約一覧
+      </button>
+    </nav>
+  </header>
+
+  <section class="content" *ngIf="activeView === 'register'">
+    <header class="page-header">
+      <p>請求情報</p>
+      <h1>登録</h1>
+    </header>
+
+    <form class="form-grid" (ngSubmit)="register()" #registerNgForm="ngForm">
+      <label>
+        請求元
+        <input name="requestSource" [(ngModel)]="registerForm.requestSource" maxlength="100" required>
+      </label>
+
+      <label>
+        請求先
+        <input name="requestDestination" [(ngModel)]="registerForm.requestDestination" maxlength="100" required>
+      </label>
+
+      <label>
+        請求年月
+        <input type="date" name="requestMonth" [(ngModel)]="registerForm.requestMonth" required>
+      </label>
+
+      <label>
+        請求技術者
+        <input name="engineer" [(ngModel)]="registerForm.engineer" maxlength="100" required>
+      </label>
+
+      <label>
+        請求金額
+        <input type="number" name="amount" [(ngModel)]="registerForm.amount" min="1" step="1" required>
+      </label>
+
+      <label class="full">
+        備考
+        <textarea name="remarks" [(ngModel)]="registerForm.remarks" maxlength="2000" rows="5"></textarea>
+      </label>
+
+      <div class="messages full" *ngIf="registerErrors.length > 0">
+        <p *ngFor="let error of registerErrors">{{ error }}</p>
+      </div>
+
+      <p class="result-message full" *ngIf="registerMessage">{{ registerMessage }}</p>
+
+      <div class="actions full">
+        <button type="submit">登録</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'salesList'">
+    <header class="page-header">
+      <p>売上管理</p>
+      <h1>売上一覧</h1>
+    </header>
+
+    <form class="form-grid sales-search-form" (ngSubmit)="searchSales()">
+      <label>
+        開始年月
+        <input type="month" name="salesStartMonth" [(ngModel)]="salesSearchForm.startMonth" required>
+      </label>
+
+      <label>
+        終了年月
+        <input type="month" name="salesEndMonth" [(ngModel)]="salesSearchForm.endMonth" required>
+      </label>
+
+      <label>
+        請求先会社
+        <select name="salesBillingDestinationCompanyId" [(ngModel)]="salesSearchForm.billingDestinationCompanyId">
+          <option value="">すべて</option>
+          <option *ngFor="let customer of customerOptions" [value]="customer.companyId">
+            {{ customer.companyName }}
+          </option>
+        </select>
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+      </div>
+    </form>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="salesMessage">{{ salesMessage }}</p>
+    </div>
+
+    <div class="table-wrap sales-table-wrap">
+      <table class="sales-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>請求年月</th>
+            <th>請求先会社</th>
+            <th>請求金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of salesResults">
+            <td>
+              <button type="button" class="link-button" (click)="openSalesDetail(row)">
+                {{ row.no }}
+              </button>
+            </td>
+            <td>{{ row.billingMonth }}</td>
+            <td>{{ row.billingDestinationCompanyName }}</td>
+            <td class="number">{{ row.billingAmount | number: '1.0-0' }}</td>
+          </tr>
+          <tr *ngIf="salesResults.length === 0">
+            <td colspan="4" class="empty-row">検索結果がありません。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'search'">
+    <header class="page-header">
+      <p>請求情報</p>
+      <h1>検索</h1>
+    </header>
+
+    <form class="form-grid search-form" (ngSubmit)="search()">
+      <label>
+        請求元
+        <input name="searchRequestSource" [(ngModel)]="searchForm.requestSource" maxlength="100">
+      </label>
+
+      <label>
+        請求先
+        <input name="searchRequestDestination" [(ngModel)]="searchForm.requestDestination" maxlength="100">
+      </label>
+
+      <label>
+        請求年月
+        <input type="date" name="searchRequestMonth" [(ngModel)]="searchForm.requestMonth">
+      </label>
+
+      <label>
+        請求技術者
+        <input name="searchEngineer" [(ngModel)]="searchForm.engineer" maxlength="100">
+      </label>
+
+      <label>
+        請求金額
+        <input type="number" name="searchAmount" [(ngModel)]="searchForm.amount" min="1" step="1">
+      </label>
+
+      <label class="full">
+        備考
+        <textarea name="searchRemarks" [(ngModel)]="searchForm.remarks" maxlength="2000" rows="3"></textarea>
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+        <button type="button" class="secondary" (click)="clearSearch()">クリア</button>
+      </div>
+    </form>
+
+    <p class="result-message" *ngIf="searchMessage">{{ searchMessage }}</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>請求元</th>
+            <th>請求先</th>
+            <th>請求年月</th>
+            <th>請求技術者</th>
+            <th>請求金額</th>
+            <th>備考</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of searchResults">
+            <td>{{ row.no }}</td>
+            <td>{{ row.requestSource }}</td>
+            <td>{{ row.requestDestination }}</td>
+            <td>{{ row.requestMonth }}</td>
+            <td>{{ row.engineer }}</td>
+            <td class="number">{{ row.amount | number: '1.0-0' }}</td>
+            <td>{{ row.remarks }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'employmentRates'">
+    <div class="pdf-page employment-page">
+      <p class="document-kicker">事業主・被保険者の皆さまへ</p>
+      <h1>令和8（2026）年度 雇用保険料率のご案内</h1>
+      <p class="document-note">
+        令和8（2026）年4月1日から令和9（2027）年3月31日までの雇用保険料率
+      </p>
+      <p class="result-message" *ngIf="masterMessage">{{ masterMessage }}</p>
+
+      <div class="pdf-table-wrap">
+        <table class="pdf-table employment-table">
+          <thead>
+            <tr>
+              <th rowspan="2">事業の種類</th>
+              <th rowspan="2">労働者負担</th>
+              <th colspan="2">事業主負担</th>
+              <th rowspan="2">雇用保険料率</th>
+            </tr>
+            <tr>
+              <th>失業等給付・育児休業給付</th>
+              <th>雇用保険二事業</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of employmentRates">
+              <td>{{ row.businessCategory }}</td>
+              <td class="number">{{ formatRate(row.workerRate) }}</td>
+              <td class="number">{{ formatRate(row.workerRate) }}</td>
+              <td class="number">{{ formatRate(row.employerRate - row.workerRate) }}</td>
+              <td class="number">{{ formatRate(row.totalRate) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'socialPremiums'">
+    <div class="pdf-page social-page">
+      <h1>令和8年3月分（4月納付分）からの健康保険・厚生年金保険の保険料額表</h1>
+      <p class="document-note">
+        （東京支部） （単位：円）
+      </p>
+      <p class="result-message" *ngIf="masterMessage">{{ masterMessage }}</p>
+
+      <div class="pdf-table-wrap">
+        <table class="pdf-table social-table">
+          <thead>
+            <tr>
+              <th colspan="2">標準報酬</th>
+              <th rowspan="3">報酬月額</th>
+              <th colspan="4">全国健康保険協会管掌健康保険料・介護保険料</th>
+              <th colspan="2">子ども・子育て支援金</th>
+              <th colspan="2">厚生年金保険料</th>
+            </tr>
+            <tr>
+              <th rowspan="2">等級</th>
+              <th rowspan="2">月額</th>
+              <th colspan="2">介護保険第2号被保険者に該当しない場合</th>
+              <th colspan="2">介護保険第2号被保険者に該当する場合</th>
+              <th colspan="2">0.23%</th>
+              <th colspan="2">18.300%</th>
+            </tr>
+            <tr>
+              <th>全額</th>
+              <th>折半額</th>
+              <th>全額</th>
+              <th>折半額</th>
+              <th>全額</th>
+              <th>折半額</th>
+              <th>全額</th>
+              <th>折半額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of socialPremiums">
+              <td>{{ pensionGradeLabel(row) }}</td>
+              <td class="number">{{ row.standardMonthlyRemuneration | number: '1.0-0' }}</td>
+              <td>{{ remunerationRange(row) }}</td>
+              <td class="number">{{ row.healthInsuranceTotalAmount | number: '1.1-2' }}</td>
+              <td class="number">{{ row.healthInsuranceEmployeeAmount | number: '1.1-2' }}</td>
+              <td class="number">{{ combinedTotal(row) | number: '1.1-2' }}</td>
+              <td class="number">{{ combinedEmployee(row) | number: '1.1-2' }}</td>
+              <td class="number">{{ row.childSupportTotalAmount | number: '1.1-2' }}</td>
+              <td class="number">{{ row.childSupportEmployeeAmount | number: '1.1-2' }}</td>
+              <td class="number">{{ row.pensionInsuranceTotalAmount | number: '1.2-2' }}</td>
+              <td class="number">{{ row.pensionInsuranceEmployeeAmount | number: '1.2-2' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'salaryConditions'">
+    <header class="page-header">
+      <p>給与情報</p>
+      <h1>社員月給明細計算条件作成</h1>
+    </header>
+
+    <div class="condition-toolbar">
+      <label>
+        支払年月
+        <input name="salaryConditionPaymentMonth" [(ngModel)]="salaryConditionPaymentMonth" maxlength="6" [disabled]="salaryDetailsRegistered">
+      </label>
+      <div class="actions">
+        <button type="button" class="secondary" (click)="loadSalaryConditions()" [disabled]="salaryDetailsRegistered">再表示</button>
+      </div>
+    </div>
+
+    <p class="result-message" *ngIf="salaryConditionMessage">{{ salaryConditionMessage }}</p>
+
+    <div class="table-wrap condition-table-wrap">
+      <table class="edit-table">
+        <thead>
+          <tr>
+            <th>社員番号</th>
+            <th>氏名</th>
+            <th>通勤手当</th>
+            <th>管理手当</th>
+            <th>交通費精算</th>
+            <th>残業代</th>
+            <th>立替経費</th>
+            <th>立替経費2</th>
+            <th>その他項目名</th>
+            <th>その他金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of salaryConditionRows" [class.employee-type-one-row]="isEmployeeTypeOne(row)">
+            <td>
+              <input [(ngModel)]="row.employeeNo" [disabled]="salaryConditionIdentityDisabled(row)">
+            </td>
+            <td>
+              <input [(ngModel)]="row.employeeName" [disabled]="salaryConditionIdentityDisabled(row)">
+            </td>
+            <td><input type="number" [(ngModel)]="row.commutingAllowance" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input type="number" [(ngModel)]="row.managementAllowance" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input type="number" [(ngModel)]="row.transportationAdjustment" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input type="number" [(ngModel)]="row.overtimePay" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input type="number" [(ngModel)]="row.advanceExpense" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input type="number" [(ngModel)]="row.advanceExpense2" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input [(ngModel)]="row.otherItemName" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td><input type="number" [(ngModel)]="row.otherAmount" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="actions screen-actions">
+      <button type="button" (click)="saveSalaryConditions()" *ngIf="isSalaryConditionEditable()">給与明細計算情報登録</button>
+      <button type="button" (click)="createSalaryDetails()" [disabled]="!canCreateSalaryDetails()">給料明細作成</button>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'salaryDetailPreview'">
+    <header class="page-header">
+      <p>給与情報</p>
+      <h1>給料明細作成表示</h1>
+    </header>
+
+    <p class="result-message" *ngIf="salaryConditionMessage">{{ salaryConditionMessage }}</p>
+
+    <div class="table-wrap detail-draft-wrap">
+      <table class="edit-table detail-draft-table salary-preview-table">
+        <thead>
+          <tr>
+            <th>社員番号</th>
+            <th>氏名</th>
+            <th>基本給料</th>
+            <th>報酬月額</th>
+            <th>支給合計</th>
+            <th>雇用保険料</th>
+            <th>厚生年金保険料</th>
+            <th>健康保険料</th>
+            <th>住民税</th>
+            <th>子ども・子育て支援金</th>
+            <th>課税所得</th>
+            <th>所得税</th>
+            <th>控除合計</th>
+            <th>その他金額</th>
+            <th>振込支給額</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of salaryDetailRows; let i = index" [class.employee-type-one-row]="isEmployeeTypeOne(row)">
+            <td class="strong-cell">{{ row.employeeNo }}</td>
+            <td>{{ row.employeeName }}</td>
+            <td class="number">{{ row.baseSalary | number: '1.0-0' }}</td>
+            <td class="number">{{ row.remunerationAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.supportTotalAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.employmentInsuranceAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.pensionInsuranceAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.healthInsuranceAmount | number: '1.1-1' }}</td>
+            <td class="number">{{ row.residentTaxAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.childSupportAmount | number: '1.1-1' }}</td>
+            <td class="number">{{ row.taxableIncome | number: '1.0-0' }}</td>
+            <td class="number">{{ row.incomeTax | number: '1.0-0' }}</td>
+            <td class="number">{{ row.deductionTotalAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.otherAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.transferPaymentAmount | number: '1.0-0' }}</td>
+            <td>
+              <div class="row-actions">
+                <button type="button" (click)="openSalaryDetailEdit(row, i)" [disabled]="salaryDetailsRegistered">訂正</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="salaryDetailRows.length === 0">
+            <td colspan="16" class="empty-row">給料明細がありません。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="actions screen-actions salary-preview-actions">
+      <button type="button" (click)="confirmAndSaveSalaryDetails()" [disabled]="salaryDetailsRegistered">訂正</button>
+      <button type="button" class="secondary" (click)="backToSalaryConditions()">戻る</button>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'attendanceSearch' || activeView === 'attendanceBulk'">
+    <header class="page-header">
+      <p>勤怠管理</p>
+      <h1>月の作業時間登録・検索</h1>
+    </header>
+
+    <form class="form-grid attendance-search-form" *ngIf="activeView === 'attendanceSearch'" (ngSubmit)="searchAttendance()">
+      <label>
+        技術者名
+        <input name="attendanceEngineerName" [(ngModel)]="attendanceSearchForm.engineerName" maxlength="100">
+      </label>
+
+      <label>
+        稼働年月
+        <input type="month" name="attendanceWorkingMonth" [(ngModel)]="attendanceSearchForm.workingMonth">
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+        <button type="button" class="secondary" (click)="clearAttendanceSearch()">クリア</button>
+      </div>
+    </form>
+
+    <section class="attendance-register-panel" *ngIf="activeView === 'attendanceBulk'">
+      <div class="section-heading">
+        <div>
+          <p>契約中の技術者を対象</p>
+          <h2>月次一括登録</h2>
+        </div>
+        <label>
+          登録年月
+          <input type="month" name="attendanceRegisterMonth" [(ngModel)]="attendanceRegisterMonth">
+        </label>
+        <button type="button" (click)="loadAttendanceRegisterRows()">対象者読込</button>
+        <button type="button" (click)="saveAttendanceBulk()" [disabled]="attendanceRegisterRows.length === 0">一括登録</button>
+      </div>
+
+      <div class="table-wrap" *ngIf="attendanceRegisterRows.length > 0">
+        <table>
+          <thead>
+            <tr>
+              <th>契約番号</th>
+              <th>技術者名</th>
+              <th>稼働時間</th>
+              <th>備考</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of attendanceRegisterRows">
+              <td>{{ row.customerName }}</td>
+              <td>{{ row.engineerName }}</td>
+              <td><input type="number" min="0" step="0.5" [(ngModel)]="row.workingHours" [name]="'attendanceHours' + row.contractNo"></td>
+              <td><input [(ngModel)]="row.remarks" [name]="'attendanceRemarks' + row.contractNo" maxlength="2000"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="list-toolbar" *ngIf="activeView === 'attendanceSearch'">
+      <p class="result-message" *ngIf="attendanceMessage">{{ attendanceMessage }}</p>
+    </div>
+
+    <div class="table-wrap" *ngIf="activeView === 'attendanceSearch'">
+      <table>
+        <thead>
+          <tr>
+            <th>技術者名</th>
+            <th>稼働年月</th>
+            <th>所属会社名</th>
+            <th>取引先名</th>
+            <th>稼働時間</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of attendanceResults">
+            <td>{{ row.engineerName }}</td>
+            <td>{{ attendanceMonthLabel(row.workingMonth) }}</td>
+            <td>{{ row.engineerCompanyName }}</td>
+            <td>{{ row.customerName }}</td>
+            <td>
+              <input type="number" min="0" step="0.5" [(ngModel)]="row.workingHours" [name]="'searchAttendanceHours' + row.contractNo + row.workingMonth">
+            </td>
+            <td>
+              <input [(ngModel)]="row.remarks" [name]="'searchAttendanceRemarks' + row.contractNo + row.workingMonth" maxlength="2000">
+            </td>
+            <td>
+              <button type="button" (click)="saveAttendance(row)">訂正</button>
+            </td>
+          </tr>
+          <tr *ngIf="attendanceResults.length === 0">
+            <td colspan="5" class="empty-row">検索後に表示します。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'contractList'">
+    <header class="page-header">
+      <p>契約情報</p>
+      <h1>契約一覧</h1>
+    </header>
+
+    <form class="form-grid contract-search-form" (ngSubmit)="searchContracts(0)">
+      <label>
+        技術者名
+        <input name="contractEngineerName" [(ngModel)]="contractSearchForm.engineerName" maxlength="100">
+      </label>
+
+      <fieldset class="radio-field">
+        <legend>稼働状況</legend>
+        <label class="radio-option">
+          <input type="radio" name="contractOperationStatus" [(ngModel)]="contractSearchForm.operationStatus" value="">
+          すべて
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="contractOperationStatus" [(ngModel)]="contractSearchForm.operationStatus" value="契約中">
+          契約中
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="contractOperationStatus" [(ngModel)]="contractSearchForm.operationStatus" value="営業中">
+          営業中
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="contractOperationStatus" [(ngModel)]="contractSearchForm.operationStatus" value="契約終了">
+          契約終了
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="contractOperationStatus" [(ngModel)]="contractSearchForm.operationStatus" value="今期">
+          今期
+        </label>
+      </fieldset>
+
+      <label>
+        契約開始（FROM）
+        <input type="date" name="contractStartDateFrom" [(ngModel)]="contractSearchForm.contractStartDateFrom">
+      </label>
+
+      <label>
+        契約終了（TO）
+        <input type="date" name="contractEndDateTo" [(ngModel)]="contractSearchForm.contractEndDateTo">
+      </label>
+
+      <label>
+        取引先
+        <select name="contractCustomerId" [(ngModel)]="contractSearchForm.customerId">
+          <option value="">すべて</option>
+          <option *ngFor="let customer of customerOptions" [value]="customer.companyId">
+            {{ customer.companyName }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        技術者所属会社
+        <select name="contractEngineerCompanyId" [(ngModel)]="contractSearchForm.engineerCompanyId">
+          <option value="">すべて</option>
+          <option *ngFor="let customer of customerOptions" [value]="customer.companyId">
+            {{ customer.companyName }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        案件所属
+        <select name="contractProjectAffiliation" [(ngModel)]="contractSearchForm.projectAffiliation">
+          <option value="">すべて</option>
+          <option *ngFor="let employeeNo of contractStaffEmployeeNos" [value]="employeeNo">
+            {{ contractStaffName(employeeNo) }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        技術者提案者
+        <select name="contractEngineerProposer" [(ngModel)]="contractSearchForm.engineerProposer">
+          <option value="">すべて</option>
+          <option *ngFor="let employeeNo of contractStaffEmployeeNos" [value]="employeeNo">
+            {{ contractStaffName(employeeNo) }}
+          </option>
+        </select>
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+        <button type="button" class="secondary" (click)="clearContractSearch()">クリア</button>
+      </div>
+    </form>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="contractMessage">{{ contractMessage }}</p>
+    </div>
+
+    <div class="contract-bulk-actions">
+      <button type="button" (click)="openContractCreate()">契約新規作成</button>
+      <button type="button">請求書一括作成</button>
+      <button type="button" (click)="createOrderDocumentsBulk()">注文書一括作成</button>
+    </div>
+
+    <div class="table-wrap contract-table-wrap">
+      <table class="contract-table">
+        <thead>
+          <tr>
+            <th>契約番号</th>
+            <th>名前</th>
+            <th>契約単価</th>
+            <th>取引先</th>
+            <th>技術者単価</th>
+            <th>技術者所属会社</th>
+            <th>案件所属</th>
+            <th>技術者提案者</th>
+            <th>稼働状況</th>
+            <th>契約開始（FROM）</th>
+            <th>契約終了（TO）</th>
+            <th>精算下限時間</th>
+            <th>精算上限時間</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of contractResults">
+            <td>
+              <button type="button" class="link-button" (click)="openContractEdit(row)">
+                {{ row.contractNo }}
+              </button>
+            </td>
+            <td class="strong-cell">{{ row.engineerName }}</td>
+            <td class="number">{{ row.contractAmount | number: '1.0-0' }}</td>
+            <td>{{ row.customerName }}</td>
+            <td class="number">{{ row.engineerUnitPrice | number: '1.0-0' }}</td>
+            <td>{{ row.engineerCompanyName }}</td>
+            <td>{{ row.projectAffiliation ? contractStaffName(row.projectAffiliation) : '' }}</td>
+            <td>{{ row.engineerProposer ? contractStaffName(row.engineerProposer) : '' }}</td>
+            <td>
+              <span class="status-pill" [class.closed]="row.operationStatus === '契約終了'">
+                {{ row.operationStatus }}
+              </span>
+            </td>
+            <td>{{ row.contractStartDate }}</td>
+            <td>{{ row.contractEndDate }}</td>
+            <td class="number">{{ row.settlementLowerHour ?? '' }}</td>
+            <td class="number">{{ row.settlementUpperHour ?? '' }}</td>
+            <td>
+              <div class="row-actions">
+                <button type="button" (click)="openContractEdit(row)">訂正</button>
+                <button type="button" (click)="deleteContract(row)">削除</button>
+              </div>
+              <div class="row-actions contract-action-secondary">
+                <button type="button" *ngIf="showContractOrderButton(row)" (click)="createOrderDocument(row)">注文書作成</button>
+                <button type="button" (click)="createInvoiceDocument(row)">請求書作成</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="contractResults.length === 0">
+            <td colspan="14" class="empty-row">検索結果がありません。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination-bar" *ngIf="contractMessage">
+      <button type="button" class="secondary" (click)="goContractPage(0)" [disabled]="contractPage === 0">
+        先頭
+      </button>
+      <button type="button" class="secondary" (click)="goContractPage(contractPage - 1)" [disabled]="contractPage === 0">
+        前へ
+      </button>
+      <span>{{ contractPageLabel() }}</span>
+      <button type="button" class="secondary" (click)="goContractPage(contractPage + 1)" [disabled]="contractTotalPages === 0 || contractPage + 1 >= contractTotalPages">
+        次へ
+      </button>
+      <button type="button" class="secondary" (click)="goContractPage(contractTotalPages - 1)" [disabled]="contractTotalPages === 0 || contractPage + 1 >= contractTotalPages">
+        最後
+      </button>
+    </div>
+  </section>
+
+  <div class="modal-backdrop" *ngIf="editingContract as contract">
+    <section class="modal-panel employee-modal" role="dialog" aria-modal="true" aria-label="契約情報訂正">
+      <header class="modal-header">
+        <div>
+          <p>契約管理</p>
+          <h2>{{ isContractCreateMode() ? '契約新規作成' : '契約情報訂正' }}</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeContractEdit()">×</button>
+      </header>
+
+      <form class="modal-form" (ngSubmit)="saveContractEdit()">
+        <label>
+          契約番号
+          <input name="editContractNo" [ngModel]="isContractCreateMode() ? '自動採番' : contract.contractNo" disabled>
+        </label>
+
+        <label>
+          技術者名
+          <input name="editContractEngineerName" [(ngModel)]="contract.engineerName" [disabled]="!isContractCreateMode()" maxlength="100" required>
+        </label>
+
+        <label>
+          技術者区分
+          <select name="editContractEngineerType" [(ngModel)]="contract.engineerType">
+            <option value=""></option>
+            <option *ngFor="let option of contractEngineerTypeOptions" [value]="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          契約単価
+          <input type="number" name="editContractAmount" [(ngModel)]="contract.contractAmount" min="0" step="1">
+        </label>
+
+        <label>
+          取引先
+          <select name="editContractCustomerName" [(ngModel)]="contract.customerName">
+            <option value=""></option>
+            <option *ngFor="let customer of customerOptions" [value]="customer.companyName">
+              {{ customer.companyName }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          契約開始（FROM）
+          <input type="date" name="editContractStartDate" [(ngModel)]="contract.contractStartDate">
+        </label>
+
+        <label>
+          契約終了（TO）
+          <input type="date" name="editContractEndDate" [(ngModel)]="contract.contractEndDate">
+        </label>
+
+        <label>
+          精算下限時間
+          <input type="number" name="editContractSettlementLowerHour" [(ngModel)]="contract.settlementLowerHour" min="0" step="1">
+        </label>
+
+        <label>
+          精算上限時間
+          <input type="number" name="editContractSettlementUpperHour" [(ngModel)]="contract.settlementUpperHour" min="0" step="1">
+        </label>
+
+        <label>
+          技術者単価
+          <input type="number" name="editContractEngineerUnitPrice" [(ngModel)]="contract.engineerUnitPrice" min="0" step="1">
+        </label>
+
+        <label>
+          技術者所属会社
+          <select name="editContractEngineerCompanyName" [(ngModel)]="contract.engineerCompanyName">
+            <option value=""></option>
+            <option *ngFor="let customer of customerOptions" [value]="customer.companyName">
+              {{ customer.companyName }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          稼働状況
+          <select name="editContractOperationStatus" [(ngModel)]="contract.operationStatus">
+            <option value=""></option>
+            <option value="契約中">契約中</option>
+            <option value="営業中">営業中</option>
+            <option value="契約終了">契約終了</option>
+          </select>
+        </label>
+
+        <label>
+          案件所属
+          <select name="editContractProjectAffiliation" [(ngModel)]="contract.projectAffiliation">
+            <option value=""></option>
+            <option *ngFor="let employeeNo of contractStaffEmployeeNos" [value]="employeeNo">
+              {{ contractStaffName(employeeNo) }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          技術者提案者
+          <select name="editContractEngineerProposer" [(ngModel)]="contract.engineerProposer">
+            <option value=""></option>
+            <option *ngFor="let employeeNo of contractStaffEmployeeNos" [value]="employeeNo">
+              {{ contractStaffName(employeeNo) }}
+            </option>
+          </select>
+        </label>
+
+        <div class="actions modal-actions full">
+          <button type="button" class="secondary" (click)="closeContractEdit()">戻る</button>
+          <button type="submit">{{ isContractCreateMode() ? '新規作成' : '訂正' }}</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="orderDocumentDialog as document">
+    <section class="modal-panel order-document-dialog" role="dialog" aria-modal="true" [attr.aria-label]="document.title">
+      <header class="modal-header">
+        <div>
+          <p>契約管理</p>
+          <h2>{{ document.title }}</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeOrderDocumentDialog()">×</button>
+      </header>
+      <div class="order-document-dialog-body">
+        <p>{{ document.message }}</p>
+        <p class="order-document-file-path">{{ document.filePath }}</p>
+      </div>
+      <div class="actions modal-actions full">
+        <button type="button" (click)="closeOrderDocumentDialog()">閉じる</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="content" *ngIf="activeView === 'salesAnalysis'">
+    <header class="page-header">
+      <p>売上管理</p>
+      <h1>売上集計解析</h1>
+    </header>
+
+    <form class="form-grid sales-analysis-search-form" (ngSubmit)="searchSalesAnalysis()">
+      <fieldset class="radio-field full">
+        <legend>集計単位</legend>
+        <label class="radio-option">
+          <input
+            type="radio"
+            name="salesAnalysisMode"
+            value="postingMonth"
+            [(ngModel)]="salesAnalysisMode"
+            (change)="changeSalesAnalysisMode()">
+          計上年月毎
+        </label>
+        <label class="radio-option">
+          <input
+            type="radio"
+            name="salesAnalysisMode"
+            value="customer"
+            [(ngModel)]="salesAnalysisMode"
+            (change)="changeSalesAnalysisMode()">
+          得意先毎
+        </label>
+      </fieldset>
+
+      <label>
+        開始年月
+        <input type="month" name="salesAnalysisStartMonth" [(ngModel)]="salesAnalysisSearchForm.startMonth" required>
+      </label>
+
+      <label>
+        終了年月
+        <input type="month" name="salesAnalysisEndMonth" [(ngModel)]="salesAnalysisSearchForm.endMonth" required>
+      </label>
+
+      <label *ngIf="salesAnalysisMode === 'customer'">
+        請求先会社
+        <select name="salesAnalysisBillingDestinationCompanyId" [(ngModel)]="salesAnalysisSearchForm.billingDestinationCompanyId">
+          <option value="">すべて</option>
+          <option *ngFor="let customer of customerOptions" [value]="customer.companyId">
+            {{ customer.companyName }}
+          </option>
+        </select>
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+      </div>
+    </form>
+
+    <div class="analysis-summary-bar" *ngIf="salesAnalysisMode === 'postingMonth' && salesAnalysisResults.length > 0">
+      <span>会社数 <strong>{{ salesAnalysisResults.length }}</strong></span>
+      <span>稼働人数 <strong>{{ salesAnalysisTotalPersonCount() | number: '1.0-0' }}</strong></span>
+      <span>売上合計 <strong>{{ salesAnalysisTotalAmount() | number: '1.0-0' }}</strong> 円</span>
+    </div>
+
+    <div class="analysis-summary-bar" *ngIf="salesAnalysisMode === 'customer' && salesMonthlyAnalysisResults.length > 0">
+      <span>月数 <strong>{{ salesMonthlyAnalysisResults.length }}</strong></span>
+      <span>稼働人数 <strong>{{ salesMonthlyTotalPersonCount() | number: '1.0-0' }}</strong></span>
+      <span>売上合計 <strong>{{ salesMonthlyTotalAmount() | number: '1.0-0' }}</strong> 円</span>
+    </div>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="salesAnalysisMessage">{{ salesAnalysisMessage }}</p>
+    </div>
+
+    <div class="sales-analysis-layout" *ngIf="salesAnalysisMode === 'postingMonth'">
+      <div class="table-wrap sales-analysis-table-wrap">
+        <table class="sales-analysis-table">
+          <thead>
+            <tr>
+              <th>請求先会社</th>
+              <th>稼働人数</th>
+              <th>売上金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of salesAnalysisResults">
+              <td>{{ row.billingDestinationCompanyName }}</td>
+              <td class="number">{{ row.workingPersonCount | number: '1.0-0' }}</td>
+              <td class="number">{{ row.salesAmount | number: '1.0-0' }}</td>
+            </tr>
+            <tr *ngIf="salesAnalysisResults.length === 0">
+              <td colspan="3" class="empty-row">検索結果がありません。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="sales-analysis-chart-panel" aria-label="得意先毎の売上割合">
+        <h2>得意先毎の売上割合</h2>
+        <div class="sales-pie-wrap">
+          <div class="sales-pie" [style.background]="salesAnalysisPieBackground()">
+            <div class="sales-pie-center">
+              <span>売上合計</span>
+              <strong>{{ salesAnalysisTotalAmount() | number: '1.0-0' }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <table class="sales-analysis-mini-table">
+          <thead>
+            <tr>
+              <th>会社名</th>
+              <th>割合</th>
+              <th>売上</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of salesAnalysisResults; let i = index">
+              <td>
+                <span class="chart-color" [style.background]="salesAnalysisColor(i)"></span>
+                {{ row.billingDestinationCompanyName }}
+              </td>
+              <td class="number">{{ salesAnalysisPercent(row) | number: '1.1-1' }}%</td>
+              <td class="number">{{ row.salesAmount | number: '1.0-0' }}</td>
+            </tr>
+            <tr *ngIf="salesAnalysisResults.length === 0">
+              <td colspan="3" class="empty-row">検索後に表示します。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <div class="sales-analysis-layout monthly-analysis-layout" *ngIf="salesAnalysisMode === 'customer'">
+      <div class="table-wrap sales-analysis-table-wrap">
+        <table class="sales-analysis-table">
+          <thead>
+            <tr>
+              <th>計上年月</th>
+              <th>稼働人数</th>
+              <th>売上金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of salesMonthlyAnalysisResults">
+              <td>{{ row.billingMonth }}</td>
+              <td class="number">{{ row.workingPersonCount | number: '1.0-0' }}</td>
+              <td class="number">{{ row.salesAmount | number: '1.0-0' }}</td>
+            </tr>
+            <tr *ngIf="salesMonthlyAnalysisResults.length === 0">
+              <td colspan="3" class="empty-row">検索結果がありません。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="sales-analysis-chart-panel monthly-chart-panel" aria-label="月別の稼働状況">
+        <h2>月別の稼働状況</h2>
+        <div class="monthly-combo-chart" *ngIf="salesMonthlyAnalysisResults.length > 0">
+          <div class="monthly-axis monthly-axis-left">
+            <span>{{ salesMonthlyMaxPersonCount() | number: '1.0-0' }}</span>
+            <span>0</span>
+          </div>
+          <div class="monthly-plot">
+            <div class="monthly-grid"></div>
+            <svg class="monthly-line" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <polyline [attr.points]="salesMonthlyLinePoints()"></polyline>
+            </svg>
+            <div class="monthly-bars">
+              <div class="monthly-bar-group" *ngFor="let row of salesMonthlyAnalysisResults">
+                <div class="monthly-bar" [style.height]="salesMonthlyBarHeight(row)"></div>
+                <span>{{ salesMonthLabel(row.billingMonth) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="monthly-axis monthly-axis-right">
+            <span>{{ salesMonthlyMaxAmount() | number: '1.0-0' }}</span>
+            <span>0</span>
+          </div>
+        </div>
+        <div class="monthly-legend" *ngIf="salesMonthlyAnalysisResults.length > 0">
+          <span><i class="legend-bar"></i>稼働人数</span>
+          <span><i class="legend-line"></i>売上</span>
+        </div>
+        <p class="empty-row" *ngIf="salesMonthlyAnalysisResults.length === 0">検索後に表示します。</p>
+      </section>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'profitAnalysis'">
+    <header class="page-header">
+      <p>売上管理</p>
+      <h1>利益解析</h1>
+    </header>
+
+    <form class="form-grid sales-analysis-search-form" (ngSubmit)="searchProfitAnalysis()">
+      <label>
+        開始年月
+        <input type="month" name="profitAnalysisStartMonth" [(ngModel)]="profitAnalysisSearchForm.startMonth" required>
+      </label>
+
+      <label>
+        終了年月
+        <input type="month" name="profitAnalysisEndMonth" [(ngModel)]="profitAnalysisSearchForm.endMonth" required>
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+      </div>
+    </form>
+
+    <div class="analysis-summary-bar" *ngIf="profitAnalysisResults.length > 0">
+      <span>月数 <strong>{{ profitAnalysisResults.length }}</strong></span>
+      <span>合計金額 <strong>{{ profitAnalysisTotalAmount() | number: '1.0-0' }}</strong> 円</span>
+    </div>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="profitAnalysisMessage">{{ profitAnalysisMessage }}</p>
+    </div>
+
+    <div class="sales-analysis-layout monthly-analysis-layout">
+      <div class="table-wrap sales-analysis-table-wrap">
+        <table class="sales-analysis-table">
+          <thead>
+            <tr>
+              <th>計上年月</th>
+              <th>金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of profitAnalysisResults">
+              <td>{{ row.postingMonth }}</td>
+              <td class="number">{{ row.profitAmount | number: '1.0-0' }}</td>
+            </tr>
+            <tr class="total-row" *ngIf="profitAnalysisResults.length > 0">
+              <td>合計金額</td>
+              <td class="number">{{ profitAnalysisTotalAmount() | number: '1.0-0' }}</td>
+            </tr>
+            <tr *ngIf="profitAnalysisResults.length === 0">
+              <td colspan="2" class="empty-row">検索結果がありません。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="sales-analysis-chart-panel monthly-chart-panel" aria-label="月別の利益状況">
+        <h2>月別の利益状況</h2>
+        <div class="monthly-combo-chart" *ngIf="profitAnalysisResults.length > 0">
+          <div class="monthly-axis monthly-axis-left">
+            <span>{{ profitAnalysisMaxPersonCount() | number: '1.0-0' }}</span>
+            <span>0</span>
+          </div>
+          <div class="monthly-plot">
+            <div class="monthly-grid"></div>
+            <svg class="monthly-line profit-line" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <polyline [attr.points]="profitAnalysisLinePoints()"></polyline>
+            </svg>
+            <div class="monthly-bars">
+              <div class="monthly-bar-group" *ngFor="let row of profitAnalysisResults">
+                <div class="monthly-bar" [style.height]="profitAnalysisBarHeight(row)"></div>
+                <span>{{ salesMonthLabel(row.postingMonth) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="monthly-axis monthly-axis-right">
+            <span>{{ profitAnalysisMaxAmount() | number: '1.0-0' }}</span>
+            <span>0</span>
+          </div>
+        </div>
+        <div class="monthly-legend" *ngIf="profitAnalysisResults.length > 0">
+          <span><i class="legend-bar"></i>稼働人数</span>
+          <span><i class="legend-line"></i>利益</span>
+        </div>
+        <p class="empty-row" *ngIf="profitAnalysisResults.length === 0">検索後に表示します。</p>
+      </section>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'customerList'">
+    <header class="page-header">
+      <p>共通管理</p>
+      <h1>取引先一覧</h1>
+    </header>
+    <div class="coming-soon-panel">
+      <h2>準備中</h2>
+      <p>取引先一覧画面は今後の製造対象です。</p>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'employeeList'">
+    <header class="page-header">
+      <p>共通管理</p>
+      <h1>社員一覧</h1>
+    </header>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="employeeMessage">{{ employeeMessage }}</p>
+      <div class="actions">
+        <button type="button">新規</button>
+      </div>
+    </div>
+
+    <div class="table-wrap employee-table-wrap">
+      <table class="employee-table">
+        <thead>
+          <tr>
+            <th>社員番号</th>
+            <th>氏名</th>
+            <th>社員区分</th>
+            <th>基本給料</th>
+            <th>扶養人数</th>
+            <th>控除人数</th>
+            <th>消費税率</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let employee of employees">
+            <td class="strong-cell">{{ employee.employeeNo }}</td>
+            <td>{{ employee.employeeName }}</td>
+            <td>{{ employee.employeeType }}</td>
+            <td class="number">{{ employee.baseSalary | number: '1.0-0' }}</td>
+            <td class="number">{{ employee.dependentCount }}</td>
+            <td class="number">{{ employee.deductionCount }}</td>
+            <td class="number">{{ employee.consumptionTaxRate | number: '1.2-2' }}</td>
+            <td>
+              <div class="row-actions">
+                <button type="button" (click)="openEmployeeEdit(employee)">訂正</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="employees.length === 0">
+            <td colspan="8" class="empty-row">社員情報がありません。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="modal-backdrop" *ngIf="editingEmployee as employee">
+    <section class="modal-panel employee-modal" role="dialog" aria-modal="true" aria-label="社員情報訂正">
+      <header class="modal-header">
+        <div>
+          <p>共通管理</p>
+          <h2>社員情報訂正</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeEmployeeEdit()">×</button>
+      </header>
+
+      <form class="modal-form" (ngSubmit)="saveEmployeeEdit()">
+        <label>
+          社員番号
+          <input name="editEmployeeNo" [(ngModel)]="employee.employeeNo" disabled>
+        </label>
+
+        <label>
+          氏名
+          <input name="editEmployeeName" [(ngModel)]="employee.employeeName" maxlength="100" required>
+        </label>
+
+        <label>
+          社員区分
+          <input name="editEmployeeType" [(ngModel)]="employee.employeeType" maxlength="50" required>
+        </label>
+
+        <label>
+          基本給料
+          <input type="number" name="editBaseSalary" [(ngModel)]="employee.baseSalary" min="0" step="1" required>
+        </label>
+
+        <label>
+          扶養人数
+          <input type="number" name="editDependentCount" [(ngModel)]="employee.dependentCount" min="0" step="1" required>
+        </label>
+
+        <label>
+          控除人数
+          <input type="number" name="editDeductionCount" [(ngModel)]="employee.deductionCount" min="0" step="1" required>
+        </label>
+
+        <label>
+          消費税率
+          <input type="number" name="editConsumptionTaxRate" [(ngModel)]="employee.consumptionTaxRate" min="0" step="0.01" required>
+        </label>
+
+        <div class="actions modal-actions full">
+          <button type="submit">訂正</button>
+          <button type="button" class="secondary" (click)="closeEmployeeEdit()">閉じる</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="selectedSalesDetail as detail">
+    <section class="modal-panel sales-detail-modal" role="dialog" aria-modal="true" aria-label="売上明細">
+      <header class="modal-header">
+        <div>
+          <p>売上管理</p>
+          <h2>売上明細</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeSalesDetail()">×</button>
+      </header>
+
+      <div class="sales-detail-body">
+        <div class="detail-summary">
+          <div>
+            <span>得意先名</span>
+            <strong>{{ detail.billingDestinationCompanyName }}</strong>
+          </div>
+          <div>
+            <span>請求年月</span>
+            <strong>{{ detail.billingMonth }}</strong>
+          </div>
+        </div>
+
+        <div class="table-wrap sales-detail-table-wrap">
+          <table class="sales-detail-table">
+            <thead>
+              <tr>
+                <th>技術者名</th>
+                <th>請求金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of detail.items">
+                <td>{{ row.engineerName }}</td>
+                <td class="number">{{ row.billingAmount | number: '1.0-0' }}</td>
+              </tr>
+              <tr class="total-row">
+                <td>合計</td>
+                <td class="number">{{ salesDetailTotal(detail) | number: '1.0-0' }}</td>
+              </tr>
+              <tr *ngIf="detail.items.length === 0">
+                <td colspan="2" class="empty-row">売上明細がありません。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="actions modal-actions">
+          <button type="button" disabled>訂正</button>
+          <button type="button" class="secondary" (click)="closeSalesDetail()">閉じる</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="editingSalaryDetail as detail">
+    <section class="modal-panel salary-detail-modal" role="dialog" aria-modal="true" aria-label="個別給与明細訂正">
+      <header class="modal-header">
+        <div>
+          <p>給与情報</p>
+          <h2>個別給与明細訂正</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeSalaryDetailEdit()">×</button>
+      </header>
+
+      <form class="modal-form salary-detail-modal-form" (ngSubmit)="applySalaryDetailEdit()">
+        <label>
+          社員番号
+          <input name="editSalaryEmployeeNo" [(ngModel)]="detail.employeeNo" disabled>
+        </label>
+
+        <label>
+          氏名
+          <input name="editSalaryEmployeeName" [(ngModel)]="detail.employeeName" disabled>
+        </label>
+
+        <label>
+          基本給料
+          <input type="number" name="editSalaryBaseSalary" [(ngModel)]="detail.baseSalary" disabled>
+        </label>
+
+        <label>
+          報酬月額
+          <input type="number" name="editSalaryRemunerationAmount" [(ngModel)]="detail.remunerationAmount">
+        </label>
+
+        <label>
+          支給合計
+          <input type="number" name="editSalarySupportTotalAmount" [(ngModel)]="detail.supportTotalAmount">
+        </label>
+
+        <label>
+          雇用保険料
+          <input type="number" name="editSalaryEmploymentInsuranceAmount" [(ngModel)]="detail.employmentInsuranceAmount" [disabled]="isEmploymentInsuranceDisabled(detail)">
+        </label>
+
+        <label>
+          厚生年金保険料
+          <input type="number" name="editSalaryPensionInsuranceAmount" [(ngModel)]="detail.pensionInsuranceAmount" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          健康保険料
+          <input type="number" name="editSalaryHealthInsuranceAmount" [(ngModel)]="detail.healthInsuranceAmount" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          住民税
+          <input type="number" name="editSalaryResidentTaxAmount" [(ngModel)]="detail.residentTaxAmount" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          子ども・子育て支援金
+          <input type="number" name="editSalaryChildSupportAmount" [(ngModel)]="detail.childSupportAmount" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          課税所得
+          <input type="number" name="editSalaryTaxableIncome" [(ngModel)]="detail.taxableIncome" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          所得税
+          <input type="number" name="editSalaryIncomeTax" [(ngModel)]="detail.incomeTax" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          控除合計
+          <input type="number" name="editSalaryDeductionTotalAmount" [(ngModel)]="detail.deductionTotalAmount" [disabled]="isEmployeeTypeOne(detail)">
+        </label>
+
+        <label>
+          その他金額
+          <input type="number" name="editSalaryOtherAmount" [(ngModel)]="detail.otherAmount">
+        </label>
+
+        <label>
+          振込支給額
+          <input type="number" name="editSalaryTransferPaymentAmount" [(ngModel)]="detail.transferPaymentAmount">
+        </label>
+
+        <div class="actions modal-actions full">
+          <button type="button" class="secondary" (click)="closeSalaryDetailEdit()">戻る</button>
+          <button type="submit">訂正</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <section class="content" *ngIf="activeView === 'payrollSearch'">
+    <header class="page-header">
+      <p>給与情報</p>
+      <h1>社員給与明細検索</h1>
+    </header>
+
+    <form class="form-grid search-form" (ngSubmit)="searchPayrollSlips()">
+      <label>
+        支払年月
+        <input name="payrollPaymentMonth" [(ngModel)]="payrollSearchForm.paymentMonth" maxlength="6" placeholder="202605">
+      </label>
+
+      <label>
+        社員番号
+        <input name="payrollEmployeeNo" [(ngModel)]="payrollSearchForm.employeeNo" maxlength="20">
+      </label>
+
+      <label>
+        社員名
+        <input name="payrollEmployeeName" [(ngModel)]="payrollSearchForm.employeeName" maxlength="100">
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+        <button type="button" class="secondary" (click)="clearPayrollSearch()">クリア</button>
+      </div>
+    </form>
+
+    <p class="result-message" *ngIf="payrollMessage">{{ payrollMessage }}</p>
+
+    <div class="actions screen-actions">
+      <button type="button" (click)="printPayrollSlipsBulk()" [disabled]="payrollResults.length === 0 || payrollBulkPrinting">
+        {{ payrollBulkPrinting ? '出力中' : '一括印刷' }}
+      </button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>社員</th>
+            <th>支払年月</th>
+            <th>基本給料</th>
+            <th>通勤手当</th>
+            <th>管理手当</th>
+            <th>交通費精算</th>
+            <th>残業代</th>
+            <th>立替経費</th>
+            <th>立替経費2</th>
+            <th>その他金額</th>
+            <th>振込支給額</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of payrollResults">
+            <td>
+              <button type="button" class="link-button" (click)="openPayrollDetail(row)">
+                {{ row.employeeNo }}
+              </button>
+              {{ row.employeeName }}
+            </td>
+            <td>{{ row.paymentMonth }}</td>
+            <td class="number">{{ row.baseSalary | number: '1.0-0' }}</td>
+            <td class="number">{{ row.commutingAllowance | number: '1.0-0' }}</td>
+            <td class="number">{{ row.managementAllowance | number: '1.0-0' }}</td>
+            <td class="number">{{ row.transportationAdjustment | number: '1.0-0' }}</td>
+            <td class="number">{{ row.overtimePay | number: '1.0-0' }}</td>
+            <td class="number">{{ row.advanceExpense | number: '1.0-0' }}</td>
+            <td class="number">{{ row.advanceExpense2 | number: '1.0-0' }}</td>
+            <td class="number">{{ row.otherAmount | number: '1.0-0' }}</td>
+            <td class="number">{{ row.transferPaymentAmount | number: '1.0-0' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'payrollDetail' && selectedPayrollSlip as detail">
+    <div class="payroll-slip">
+      <div class="payroll-slip-header">
+        <div class="payroll-actions">
+          <button type="button" class="print-button" (click)="printPayrollSlip(detail)">印刷</button>
+          <button type="button" class="back-button" (click)="backToPayrollSearch()">戻る</button>
+        </div>
+        <h1>{{ payrollSlipTitle(detail) }}</h1>
+        <div class="payroll-meta">
+          <div><strong>振込日</strong> {{ payrollTransferDate(detail) }}</div>
+        </div>
+      </div>
+
+      <div class="employee-summary">
+        <div><span>氏名</span><strong>{{ detail.employeeName }}</strong> 様</div>
+        <div><span>所属</span><strong>株式会社CMCソフト</strong></div>
+        <div><span>従業員コード</span><strong>{{ detail.employeeNo }}</strong></div>
+      </div>
+
+      <div class="slip-grid">
+        <table class="slip-box">
+          <thead>
+            <tr><th colspan="2">支給</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>基本給料</td><td class="number">{{ detail.baseSalary | number: '1.0-0' }}</td></tr>
+            <tr><td>通勤手当</td><td class="number">{{ detail.commutingAllowance | number: '1.0-0' }}</td></tr>
+            <tr><td>管理手当</td><td class="number">{{ detail.managementAllowance | number: '1.0-0' }}</td></tr>
+            <tr><td>営業手当</td><td class="number">0</td></tr>
+            <tr><td>残業代</td><td class="number">{{ detail.overtimePay | number: '1.0-0' }}</td></tr>
+            <tr><td>交通費精算</td><td class="number">{{ detail.transportationAdjustment | number: '1.0-0' }}</td></tr>
+            <tr><td>立替経費</td><td class="number">{{ detail.advanceExpense | number: '1.0-0' }}</td></tr>
+            <tr><td>立替経費2</td><td class="number">{{ detail.advanceExpense2 | number: '1.0-0' }}</td></tr>
+            <tr class="total-row"><td>合計</td><td class="number">{{ payrollSupportTotal(detail) | number: '1.0-0' }}</td></tr>
+          </tbody>
+        </table>
+
+        <table class="slip-box">
+          <thead>
+            <tr><th colspan="2">控除</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>雇用保険料</td><td class="number">{{ detail.employmentInsuranceAmount | number: '1.0-0' }}</td></tr>
+            <tr><td>厚生年金保険料</td><td class="number">{{ detail.pensionInsuranceAmount | number: '1.0-0' }}</td></tr>
+            <tr><td>健康保険料</td><td class="number">{{ detail.healthInsuranceAmount | number: '1.1-1' }}</td></tr>
+            <tr><td>所得税</td><td class="number">{{ detail.incomeTax | number: '1.0-0' }}</td></tr>
+            <tr><td>住民税</td><td class="number">{{ detail.residentTaxAmount | number: '1.0-0' }}</td></tr>
+            <tr><td>子ども・子育て支援金</td><td class="number">{{ detail.childSupportAmount | number: '1.1-1' }}</td></tr>
+            <tr class="blank-row"><td></td><td></td></tr>
+            <tr class="blank-row"><td></td><td></td></tr>
+            <tr class="total-row"><td>合計</td><td class="number">{{ payrollDeductionTotal(detail) | number: '1.0-0' }}</td></tr>
+          </tbody>
+        </table>
+
+        <div class="slip-side">
+          <table class="slip-box small-box">
+            <thead>
+              <tr><th colspan="2">その他</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>{{ otherItemLabel(detail) }}</td><td class="number">{{ amount(detail.otherAmount) | number: '1.0-0' }}</td></tr>
+              <tr><td></td><td></td></tr>
+            </tbody>
+          </table>
+
+          <table class="slip-box small-box">
+            <thead>
+              <tr><th colspan="2">差引合計</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>振込支給額</td><td class="number">{{ detail.transferPaymentAmount | number: '1.0-0' }}</td></tr>
+              <tr class="total-row"><td>差引支給合計</td><td class="number">{{ detail.transferPaymentAmount | number: '1.0-0' }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
