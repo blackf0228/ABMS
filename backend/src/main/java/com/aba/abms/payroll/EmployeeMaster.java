@@ -17,6 +17,12 @@ public class EmployeeMaster {
   @Column(name = "employee_name", nullable = false, length = 100)
   private String employeeName;
 
+  @Column(name = "last_name", nullable = false, length = 50)
+  private String lastName;
+
+  @Column(name = "first_name", nullable = false, length = 50)
+  private String firstName;
+
   @Column(name = "employee_type", nullable = false, length = 50)
   private String employeeType;
 
@@ -32,6 +38,9 @@ public class EmployeeMaster {
   @Column(name = "consumption_tax_rate", nullable = false, precision = 5, scale = 2)
   private BigDecimal consumptionTaxRate = BigDecimal.ZERO;
 
+  @Column(name = "deletion_flag", nullable = false, length = 1)
+  private String deletionFlag = "0";
+
   public String getEmployeeNo() {
     return employeeNo;
   }
@@ -46,6 +55,22 @@ public class EmployeeMaster {
 
   public void setEmployeeName(String employeeName) {
     this.employeeName = employeeName;
+  }
+
+  public String getLastName() {
+    return lastName;
+  }
+
+  public void setLastName(String lastName) {
+    this.lastName = lastName;
+  }
+
+  public String getFirstName() {
+    return firstName;
+  }
+
+  public void setFirstName(String firstName) {
+    this.firstName = firstName;
   }
 
   public String getEmployeeType() {
@@ -86,5 +111,13 @@ public class EmployeeMaster {
 
   public void setConsumptionTaxRate(BigDecimal consumptionTaxRate) {
     this.consumptionTaxRate = consumptionTaxRate;
+  }
+
+  public String getDeletionFlag() {
+    return deletionFlag;
+  }
+
+  public void setDeletionFlag(String deletionFlag) {
+    this.deletionFlag = deletionFlag;
   }
 }

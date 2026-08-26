@@ -54,13 +54,13 @@ cd "C:\Users\black\Documents\Hello World\abms"
 Backend URL:
 
 ```text
-http://localhost:8080
+http://localhost:9000
 ```
 
 確認用API:
 
 ```text
-http://localhost:8080/api/hello
+http://localhost:9000/api/hello
 ```
 
 期待される結果:
@@ -162,7 +162,7 @@ Dockerの権限が反映されていない可能性があります。
 
 一度Windowsからサインアウトするか、Windowsを再起動してください。
 
-### 8080番ポートが使用中
+### 9000番ポートが使用中
 
 Backendがすでに起動している可能性があります。
 

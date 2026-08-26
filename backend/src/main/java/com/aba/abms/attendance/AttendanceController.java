@@ -44,7 +44,7 @@ public class AttendanceController {
     StringBuilder sql = new StringBuilder("""
         select
           a.contract_no,
-          a.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, a.engineer_name) as engineer_name,
           a.working_month,
           c.engineer_company_name,
           c.customer_name,
@@ -52,11 +52,12 @@ public class AttendanceController {
           a.remarks
         from attendance_hours a
         left join contracts c on c.contract_no = a.contract_no
+        left join employee_masters e on e.employee_no = a.engineer_name
         where 1 = 1
         """);
     Map<String, Object> params = new HashMap<>();
     appendSearchCondition(sql, params, engineerName, workingMonth);
-    sql.append(" order by a.engineer_name, a.working_month, a.contract_no");
+    sql.append(" order by c.customer_name, engineer_name, a.working_month, a.contract_no");
     return jdbcTemplate.query(sql.toString(), params, new AttendanceItemMapper());
   }
 
@@ -67,13 +68,14 @@ public class AttendanceController {
     return jdbcTemplate.query("""
         select
           c.contract_no,
-          c.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, c.engineer_name) as engineer_name,
           :workingMonth as working_month,
           c.engineer_company_name,
           c.customer_name,
           a.working_hours,
           a.remarks
         from contracts c
+        left join employee_masters e on e.employee_no = c.engineer_name
         left join attendance_hours a
           on a.contract_no = c.contract_no
          and a.engineer_name = c.engineer_name
@@ -81,7 +83,7 @@ public class AttendanceController {
         where c.operation_status = '契約中'
           and c.contract_start_date <= :monthEnd
           and (c.contract_end_date is null or c.contract_end_date >= :monthStart)
-        order by c.engineer_name, c.contract_no
+        order by c.customer_name, engineer_name, c.contract_no
         """,
         Map.of(
             "workingMonth", month,
@@ -102,7 +104,10 @@ public class AttendanceController {
       }
       Map<String, Object> params = new HashMap<>();
       params.put("contractNo", row.contractNo());
-      params.put("engineerName", row.engineerName().trim());
+      String engineerEmployeeNo = jdbcTemplate.queryForObject(
+          "select engineer_name from contracts where contract_no = :contractNo",
+          Map.of("contractNo", row.contractNo()), String.class);
+      params.put("engineerName", engineerEmployeeNo);
       params.put("workingMonth", month);
       params.put("workingHours", row.workingHours() == null ? BigDecimal.ZERO : row.workingHours());
       params.put("remarks", row.remarks() == null ? "" : row.remarks().trim());
@@ -158,7 +163,7 @@ public class AttendanceController {
     return jdbcTemplate.queryForObject("""
         select
           a.contract_no,
-          a.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, a.engineer_name) as engineer_name,
           a.working_month,
           c.engineer_company_name,
           c.customer_name,
@@ -166,6 +171,7 @@ public class AttendanceController {
           a.remarks
         from attendance_hours a
         left join contracts c on c.contract_no = a.contract_no
+        left join employee_masters e on e.employee_no = a.engineer_name
         where a.contract_no = :contractNo
           and a.engineer_name = :engineerName
           and a.working_month = :workingMonth
@@ -178,7 +184,7 @@ public class AttendanceController {
       String engineerName,
       String workingMonth) {
     if (engineerName != null && !engineerName.isBlank()) {
-      sql.append(" and a.engineer_name like :engineerName");
+      sql.append(" and coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, a.engineer_name) like :engineerName");
       params.put("engineerName", "%" + engineerName.trim() + "%");
     }
     if (workingMonth != null && !workingMonth.isBlank()) {

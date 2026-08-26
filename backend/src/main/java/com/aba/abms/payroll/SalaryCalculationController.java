@@ -47,8 +47,15 @@ public class SalaryCalculationController {
   @GetMapping("/conditions")
   public SalaryConditionResponse conditions(@RequestParam(required = false) String paymentMonth) {
     String targetMonth = normalizePaymentMonth(paymentMonth);
-    List<SalaryConditionRow> rows = loadConditionRows(targetMonth);
-    return new SalaryConditionResponse(targetMonth, previousMonth(targetMonth), !rows.isEmpty(), rows);
+    boolean hasData = hasConditionData(targetMonth);
+    List<SalaryConditionRow> rows = hasData
+        ? loadConditionRows(targetMonth)
+        : isCurrentMonth(targetMonth) ? loadCurrentMonthEmployeeFallbackRows(targetMonth) : List.of();
+    return new SalaryConditionResponse(
+        targetMonth,
+        previousMonth(targetMonth),
+        hasData,
+        rows);
   }
 
   @GetMapping("/conditions/copy-previous")
@@ -154,26 +161,63 @@ public class SalaryCalculationController {
   private List<SalaryConditionRow> loadConditionRows(String paymentMonth) {
     return jdbcTemplate.query("""
         select
-          c.employee_no,
-          coalesce(e.employee_name, '') as employee_name,
-          coalesce(e.employee_type, '') as employee_type,
-          c.payment_month,
+          e.employee_no,
+          e.employee_name,
+          e.employee_type,
+          coalesce(c.payment_month, :paymentMonth) as payment_month,
+          coalesce(c.base_salary, e.base_salary, 0) as base_salary,
+          coalesce(e.consumption_tax_rate, 0) as consumption_tax_rate,
+          coalesce(c.commuting_allowance, 0) as commuting_allowance,
+          coalesce(c.management_allowance, 0) as management_allowance,
+          coalesce(c.transportation_adjustment, 0) as transportation_adjustment,
+          coalesce(c.overtime_pay, 0) as overtime_pay,
+          coalesce(c.advance_expense, 0) as advance_expense,
+          coalesce(c.advance_expense2, 0) as advance_expense2,
+          coalesce(c.other_amount, 0) as other_amount,
+          coalesce(c.other_item_name, '') as other_item_name
+        from employee_masters e
+        join monthly_salary_calculation_conditions c
+          on c.employee_no = e.employee_no
+         and c.payment_month = :paymentMonth
+        order by e.employee_no
+        """, Map.of("paymentMonth", paymentMonth), new SalaryConditionRowMapper());
+  }
+
+  private List<SalaryConditionRow> loadCurrentMonthEmployeeFallbackRows(String paymentMonth) {
+    return jdbcTemplate.query("""
+        select
+          e.employee_no,
+          e.employee_name,
+          e.employee_type,
+          :paymentMonth as payment_month,
           coalesce(e.base_salary, 0) as base_salary,
           coalesce(e.consumption_tax_rate, 0) as consumption_tax_rate,
-          c.commuting_allowance,
-          c.management_allowance,
-          c.transportation_adjustment,
-          c.overtime_pay,
-          c.advance_expense,
-          c.advance_expense2,
-          c.other_amount,
-          c.other_item_name
-        from monthly_salary_calculation_conditions c
-        left join employee_masters e
-          on e.employee_no = c.employee_no
-        where c.payment_month = :paymentMonth
-        order by c.employee_no
+          0 as commuting_allowance,
+          0 as management_allowance,
+          0 as transportation_adjustment,
+          0 as overtime_pay,
+          0 as advance_expense,
+          0 as advance_expense2,
+          0 as other_amount,
+          '' as other_item_name
+        from employee_masters e
+        where e.employee_type = '0'
+          and e.deletion_flag = '0'
+        order by e.employee_no
         """, Map.of("paymentMonth", paymentMonth), new SalaryConditionRowMapper());
+  }
+
+  private boolean hasConditionData(String paymentMonth) {
+    Integer count = jdbcTemplate.queryForObject("""
+        select count(*)
+        from monthly_salary_calculation_conditions c
+        where c.payment_month = :paymentMonth
+        """, Map.of("paymentMonth", paymentMonth), Integer.class);
+    return count != null && count > 0;
+  }
+
+  private boolean isCurrentMonth(String paymentMonth) {
+    return YearMonth.now().format(PAYMENT_MONTH_FORMATTER).equals(paymentMonth);
   }
 
   private void upsertEmployee(SalaryConditionRow row) {
@@ -208,6 +252,7 @@ public class SalaryCalculationController {
     Map<String, Object> params = new HashMap<>();
     params.put("employeeNo", row.employeeNo().trim());
     params.put("paymentMonth", paymentMonth);
+    params.put("baseSalary", amount(row.baseSalary()));
     params.put("commutingAllowance", amount(row.commutingAllowance()));
     params.put("managementAllowance", amount(row.managementAllowance()));
     params.put("transportationAdjustment", amount(row.transportationAdjustment()));
@@ -220,6 +265,7 @@ public class SalaryCalculationController {
         insert into monthly_salary_calculation_conditions (
           employee_no,
           payment_month,
+          base_salary,
           commuting_allowance,
           management_allowance,
           transportation_adjustment,
@@ -231,6 +277,7 @@ public class SalaryCalculationController {
         ) values (
           :employeeNo,
           :paymentMonth,
+          :baseSalary,
           :commutingAllowance,
           :managementAllowance,
           :transportationAdjustment,
@@ -241,6 +288,7 @@ public class SalaryCalculationController {
           :otherItemName
         )
         on conflict (employee_no, payment_month) do update set
+          base_salary = excluded.base_salary,
           commuting_allowance = excluded.commuting_allowance,
           management_allowance = excluded.management_allowance,
           transportation_adjustment = excluded.transportation_adjustment,

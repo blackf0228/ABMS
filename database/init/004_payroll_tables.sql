@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS employee_masters (
   employee_no VARCHAR(20) PRIMARY KEY,
   employee_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(50),
+  first_name VARCHAR(50),
   employee_type VARCHAR(50) NOT NULL,
   base_salary NUMERIC(15, 2) NOT NULL,
   dependent_count INTEGER NOT NULL,
@@ -11,9 +13,13 @@ CREATE TABLE IF NOT EXISTS employee_masters (
 ALTER TABLE employee_masters
   ADD COLUMN IF NOT EXISTS consumption_tax_rate NUMERIC(5, 2) NOT NULL DEFAULT 0;
 
+ALTER TABLE employee_masters
+  ADD COLUMN IF NOT EXISTS deletion_flag VARCHAR(1) NOT NULL DEFAULT '0';
+
 CREATE TABLE IF NOT EXISTS monthly_salary_calculation_conditions (
   employee_no VARCHAR(20) NOT NULL,
   payment_month VARCHAR(7) NOT NULL,
+  base_salary NUMERIC(15, 2),
   commuting_allowance NUMERIC(15, 2),
   management_allowance NUMERIC(15, 2),
   transportation_adjustment NUMERIC(15, 2),

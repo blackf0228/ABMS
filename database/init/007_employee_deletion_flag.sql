@@ -1,0 +1,2 @@
+ALTER TABLE employee_masters
+  ADD COLUMN IF NOT EXISTS deletion_flag VARCHAR(1) NOT NULL DEFAULT '0';

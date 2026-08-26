@@ -33,6 +33,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -60,20 +61,22 @@ public class OrderDocumentController {
   }
 
   @PostMapping("/{contractNo}/order-document")
-  public OrderDocumentResponse create(@PathVariable Integer contractNo) throws IOException {
-    return createOrderDocument(contractNo, YearMonth.now());
+  public OrderDocumentResponse create(
+      @PathVariable Integer contractNo,
+      @RequestBody DocumentCreationRequest request) throws IOException {
+    return createOrderDocument(contractNo, request.toYearMonth());
   }
 
   @PostMapping("/order-documents/bulk")
-  public OrderDocumentBulkResponse createBulk() throws IOException {
-    YearMonth currentMonth = YearMonth.now();
-    YearMonth targetMonth = currentMonth.plusMonths(1);
+  public OrderDocumentBulkResponse createBulk(@RequestBody DocumentCreationRequest request) throws IOException {
+    YearMonth currentMonth = request.toYearMonth();
+    YearMonth targetMonth = currentMonth;
     List<Integer> contractNos = jdbcTemplate.query(
         """
         select c.contract_no
         from contracts c
         join customer_masters engineer_company
-          on engineer_company.company_name = c.engineer_company_name
+          on trim(engineer_company.company_name) = trim(c.engineer_company_name)
         where trim(engineer_company.company_id) <> '0000'
           and trim(engineer_company.company_id) <> ''
           and c.operation_status = '契約中'
@@ -98,7 +101,7 @@ public class OrderDocumentController {
     OrderDocumentData data = jdbcTemplate.queryForObject(
         """
         select
-          c.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', engineer.last_name, engineer.first_name)), ''), engineer.employee_name, c.engineer_name) as engineer_name,
           c.contract_amount,
           c.engineer_unit_price,
           c.engineer_company_name,
@@ -108,10 +111,12 @@ public class OrderDocumentController {
           customer.company_id as customer_id,
           engineer_company.company_id as engineer_company_id
         from contracts c
+        left join employee_masters engineer
+          on engineer.employee_no = c.engineer_name
         left join customer_masters customer
-          on customer.company_name = c.customer_name
+          on trim(customer.company_name) = trim(c.customer_name)
         left join customer_masters engineer_company
-          on engineer_company.company_name = c.engineer_company_name
+          on trim(engineer_company.company_name) = trim(c.engineer_company_name)
         where c.contract_no = :contractNo
         """,
         Map.of("contractNo", contractNo),
@@ -122,11 +127,12 @@ public class OrderDocumentController {
     }
 
     Path outputDirectory = resolveProjectRoot().resolve("output").resolve("注文書");
+    outputDirectory = orderOutputDirectory();
     Files.createDirectories(outputDirectory);
 
     String fileName = sanitizeFileName(
         "注文書_" + compact(data.engineerCompanyName()) + "_"
-            + currentMonth.plusMonths(1).format(FILE_MONTH_FORMAT) + "_"
+            + currentMonth.format(FILE_MONTH_FORMAT) + "_"
             + compact(data.engineerName()) + "様.xlsx");
     Path outputPath = outputDirectory.resolve(fileName);
 
@@ -135,6 +141,10 @@ public class OrderDocumentController {
     Path templatePath = resolveProjectRoot().getParent()
         .resolve("要件")
         .resolve("注文書_技術者所属会社名_注文年月_技術者名様.xlsx");
+    templatePath = orderTemplatePath();
+    if (!Files.exists(templatePath)) {
+      throw new IllegalStateException("注文書テンプレートが見つかりません: " + templatePath);
+    }
     try (InputStream input = Files.newInputStream(templatePath);
         XSSFWorkbook workbook = new XSSFWorkbook(input);
         OutputStream output = Files.newOutputStream(outputPath)) {
@@ -149,7 +159,7 @@ public class OrderDocumentController {
       OrderDocumentData data,
       YearMonth currentMonth,
       SettlementValues settlement) {
-    YearMonth nextMonth = currentMonth.plusMonths(1);
+    YearMonth nextMonth = currentMonth;
     Map<String, String> values = new HashMap<>();
     values.put("【発行年月日】", currentMonth.atEndOfMonth().format(DATE_FORMAT));
     values.put("【技術者所属会社名】", value(data.engineerCompanyName()));
@@ -163,6 +173,9 @@ public class OrderDocumentController {
     values.put("【精算上限時間】", settlement.upperHour());
     values.put("【超過単価】", settlement.overUnitPrice());
     values.put("【不足単価】", settlement.underUnitPrice());
+    String deliveryDate = currentMonth.plusMonths(3).atEndOfMonth().format(DATE_FORMAT);
+    String targetDeliveryDate = currentMonth.plusMonths(2).atEndOfMonth().format(DATE_FORMAT);
+    values.replaceAll((key, value) -> value.equals(deliveryDate) ? targetDeliveryDate : value);
     return values;
   }
 
@@ -217,8 +230,7 @@ public class OrderDocumentController {
   }
 
   private static SettlementValues settlementValues(OrderDocumentData data, YearMonth currentMonth) {
-    YearMonth settlementMonth = currentMonth.plusMonths(1);
-    int workingDays = businessDays(settlementMonth);
+    int workingDays = businessDays(currentMonth);
     Integer lowerHour = resolvedHour(data.settlementLowerHour(), 8 * workingDays - 4);
     Integer upperHour = resolvedHour(data.settlementUpperHour(), 8 * workingDays + 20);
     String lowerText = integer(lowerHour);
@@ -353,6 +365,16 @@ public class OrderDocumentController {
       return current.getParent();
     }
     return current;
+  }
+
+  private static Path orderOutputDirectory() {
+    return resolveProjectRoot().resolve("output").resolve("\u6ce8\u6587\u66f8");
+  }
+
+  private static Path orderTemplatePath() {
+    return resolveProjectRoot().getParent()
+        .resolve("\u8981\u4ef6")
+        .resolve("\u6ce8\u6587\u66f8_\u6280\u8853\u8005\u6240\u5c5e\u4f1a\u793e\u540d_\u6ce8\u6587\u5e74\u6708_\u6280\u8853\u8005\u540d\u69d8.xlsx");
   }
 
   private static String value(String value) {

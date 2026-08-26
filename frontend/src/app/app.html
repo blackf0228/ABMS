@@ -382,7 +382,7 @@
     <div class="condition-toolbar">
       <label>
         支払年月
-        <input name="salaryConditionPaymentMonth" [(ngModel)]="salaryConditionPaymentMonth" maxlength="6" [disabled]="salaryDetailsRegistered">
+        <input name="salaryConditionPaymentMonth" [(ngModel)]="salaryConditionPaymentMonth" maxlength="6">
       </label>
       <div class="actions">
         <button type="button" class="secondary" (click)="loadSalaryConditions()" [disabled]="salaryDetailsRegistered">再表示</button>
@@ -397,6 +397,7 @@
           <tr>
             <th>社員番号</th>
             <th>氏名</th>
+            <th>基本給料</th>
             <th>通勤手当</th>
             <th>管理手当</th>
             <th>交通費精算</th>
@@ -414,6 +415,9 @@
             </td>
             <td>
               <input [(ngModel)]="row.employeeName" [disabled]="salaryConditionIdentityDisabled(row)">
+            </td>
+            <td>
+              <input type="number" [(ngModel)]="row.baseSalary" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()">
             </td>
             <td><input type="number" [(ngModel)]="row.commutingAllowance" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
             <td><input type="number" [(ngModel)]="row.managementAllowance" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
@@ -696,7 +700,7 @@
 
     <div class="contract-bulk-actions">
       <button type="button" (click)="openContractCreate()">契約新規作成</button>
-      <button type="button">請求書一括作成</button>
+      <button type="button" (click)="createInvoiceDocumentsBulk()">請求書一括作成</button>
       <button type="button" (click)="createOrderDocumentsBulk()">注文書一括作成</button>
     </div>
 
@@ -892,6 +896,32 @@
         <div class="actions modal-actions full">
           <button type="button" class="secondary" (click)="closeContractEdit()">戻る</button>
           <button type="submit">{{ isContractCreateMode() ? '新規作成' : '訂正' }}</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="documentCreationAction">
+    <section class="modal-panel document-creation-month-dialog" role="dialog" aria-modal="true" aria-label="作成年月選択">
+      <header class="modal-header">
+        <div>
+          <p>帳票作成</p>
+          <h2>{{ documentCreationAction.type === 'order' ? '注文書作成年月' : '請求書作成年月' }}</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeDocumentCreationMonth()">×</button>
+      </header>
+      <form class="modal-form" (ngSubmit)="confirmDocumentCreation()">
+        <label>
+          作成年月
+          <select name="documentCreationMonth" [(ngModel)]="documentCreationMonth" required>
+            <option *ngFor="let month of documentCreationMonthOptions" [value]="month">
+              {{ documentCreationMonthLabel(month) }}
+            </option>
+          </select>
+        </label>
+        <div class="actions modal-actions full">
+          <button type="button" class="secondary" (click)="closeDocumentCreationMonth()">戻る</button>
+          <button type="submit">作成</button>
         </div>
       </form>
     </section>
@@ -1195,11 +1225,69 @@
       <p>共通管理</p>
       <h1>取引先一覧</h1>
     </header>
-    <div class="coming-soon-panel">
-      <h2>準備中</h2>
-      <p>取引先一覧画面は今後の製造対象です。</p>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="customerMessage">{{ customerMessage }}</p>
+      <div class="actions">
+        <button type="button" (click)="openCustomerCreate()">新規</button>
+      </div>
+    </div>
+
+    <div class="table-wrap employee-table-wrap">
+      <table class="employee-table">
+        <thead>
+          <tr>
+            <th>会社ID</th>
+            <th>会社名</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let customer of customerOptions">
+            <td class="strong-cell">{{ customer.companyId }}</td>
+            <td>{{ customer.companyName }}</td>
+            <td>
+              <div class="row-actions">
+                <button type="button" (click)="openCustomerEdit(customer)">訂正</button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="customerOptions.length === 0">
+            <td colspan="3" class="empty-row">取引先情報がありません。</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
+
+  <div class="modal-backdrop" *ngIf="editingCustomer as customer">
+    <section class="modal-panel employee-modal" role="dialog" aria-modal="true" aria-label="取引先情報">
+      <header class="modal-header">
+        <div>
+          <p>共通管理</p>
+          <h2>{{ customerCreateMode ? '取引先新規作成' : '取引先情報訂正' }}</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeCustomerEdit()">×</button>
+      </header>
+
+      <form class="modal-form" (ngSubmit)="saveCustomerEdit()">
+        <label>
+          会社ID
+          <input name="editCustomerId" [(ngModel)]="customer.companyId" [disabled]="!customerCreateMode" maxlength="20" required>
+        </label>
+
+        <label>
+          会社名
+          <input name="editCustomerName" [(ngModel)]="customer.companyName" maxlength="200" required>
+        </label>
+
+        <div class="actions modal-actions full">
+          <button type="submit">{{ customerCreateMode ? '新規作成' : '訂正' }}</button>
+          <button type="button" class="secondary" (click)="closeCustomerEdit()">閉じる</button>
+        </div>
+      </form>
+    </section>
+  </div>
 
   <section class="content" *ngIf="activeView === 'employeeList'">
     <header class="page-header">
@@ -1210,9 +1298,14 @@
     <div class="list-toolbar">
       <p class="result-message" *ngIf="employeeMessage">{{ employeeMessage }}</p>
       <div class="actions">
-        <button type="button">新規</button>
+        <button type="button" (click)="openEmployeeCreate()">新規</button>
       </div>
     </div>
+
+    <label class="employee-filter-checkbox">
+      <input type="checkbox" name="includeBpEmployees" [(ngModel)]="includeBpEmployees">
+      BP含む
+    </label>
 
     <div class="table-wrap employee-table-wrap">
       <table class="employee-table">
@@ -1225,26 +1318,28 @@
             <th>扶養人数</th>
             <th>控除人数</th>
             <th>消費税率</th>
+            <th>削除区分</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let employee of employees">
+          <tr *ngFor="let employee of employeeListRows">
             <td class="strong-cell">{{ employee.employeeNo }}</td>
-            <td>{{ employee.employeeName }}</td>
+            <td>{{ employeeDisplayName(employee) }}</td>
             <td>{{ employee.employeeType }}</td>
             <td class="number">{{ employee.baseSalary | number: '1.0-0' }}</td>
             <td class="number">{{ employee.dependentCount }}</td>
             <td class="number">{{ employee.deductionCount }}</td>
             <td class="number">{{ employee.consumptionTaxRate | number: '1.2-2' }}</td>
+            <td>{{ employee.deletionFlag === '1' ? '1：解約済' : '0：有効' }}</td>
             <td>
               <div class="row-actions">
                 <button type="button" (click)="openEmployeeEdit(employee)">訂正</button>
               </div>
             </td>
           </tr>
-          <tr *ngIf="employees.length === 0">
-            <td colspan="8" class="empty-row">社員情報がありません。</td>
+          <tr *ngIf="employeeListRows.length === 0">
+            <td colspan="9" class="empty-row">社員情報がありません。</td>
           </tr>
         </tbody>
       </table>
@@ -1252,11 +1347,11 @@
   </section>
 
   <div class="modal-backdrop" *ngIf="editingEmployee as employee">
-    <section class="modal-panel employee-modal" role="dialog" aria-modal="true" aria-label="社員情報訂正">
+    <section class="modal-panel employee-modal" role="dialog" aria-modal="true" aria-label="社員情報">
       <header class="modal-header">
         <div>
           <p>共通管理</p>
-          <h2>社員情報訂正</h2>
+          <h2>{{ employeeCreateMode ? '社員新規作成' : '社員情報訂正' }}</h2>
         </div>
         <button type="button" class="modal-close" (click)="closeEmployeeEdit()">×</button>
       </header>
@@ -1264,17 +1359,25 @@
       <form class="modal-form" (ngSubmit)="saveEmployeeEdit()">
         <label>
           社員番号
-          <input name="editEmployeeNo" [(ngModel)]="employee.employeeNo" disabled>
+          <input name="editEmployeeNo" [(ngModel)]="employee.employeeNo" disabled required>
         </label>
 
         <label>
-          氏名
-          <input name="editEmployeeName" [(ngModel)]="employee.employeeName" maxlength="100" required>
+          姓
+          <input name="editEmployeeLastName" [(ngModel)]="employee.lastName" maxlength="50" required>
+        </label>
+
+        <label>
+          名
+          <input name="editEmployeeFirstName" [(ngModel)]="employee.firstName" maxlength="50" required>
         </label>
 
         <label>
           社員区分
-          <input name="editEmployeeType" [(ngModel)]="employee.employeeType" maxlength="50" required>
+          <select name="editEmployeeType" [(ngModel)]="employee.employeeType" required>
+            <option value="0">0:正社員</option>
+            <option value="1">1:個人事業主</option>
+          </select>
         </label>
 
         <label>
@@ -1297,8 +1400,17 @@
           <input type="number" name="editConsumptionTaxRate" [(ngModel)]="employee.consumptionTaxRate" min="0" step="0.01" required>
         </label>
 
+        <label *ngIf="!employeeCreateMode" class="checkbox-label">
+          <input
+            type="checkbox"
+            name="editEmployeeDeletionFlag"
+            [checked]="employee.deletionFlag === '1'"
+            (change)="employee.deletionFlag = $any($event.target).checked ? '1' : '0'">
+          解約
+        </label>
+
         <div class="actions modal-actions full">
-          <button type="submit">訂正</button>
+          <button type="submit">{{ employeeCreateMode ? '新規作成' : '訂正' }}</button>
           <button type="button" class="secondary" (click)="closeEmployeeEdit()">閉じる</button>
         </div>
       </form>

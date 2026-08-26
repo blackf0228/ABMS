@@ -111,12 +111,24 @@ interface InvoiceDocumentResponse {
   detailCount: number;
 }
 
+interface InvoiceDocumentBulkResponse {
+  createdCount: number;
+  fileNames: string[];
+  outputDirectory: string;
+}
+
 interface OrderDocumentDialog {
   title: string;
   message: string;
   fileName: string;
   filePath: string;
 }
+
+type DocumentCreationAction =
+  | { type: 'order'; bulk: false; row: ContractListItem }
+  | { type: 'order'; bulk: true }
+  | { type: 'invoice'; bulk: false; row: ContractListItem }
+  | { type: 'invoice'; bulk: true };
 
 interface SalaryConditionRow {
   employeeNo: string;
@@ -281,11 +293,14 @@ interface SalesDetailResponse {
 interface EmployeeMaster {
   employeeNo: string;
   employeeName: string;
+  lastName: string;
+  firstName: string;
   employeeType: string;
   baseSalary: number | null;
   dependentCount: number | null;
   deductionCount: number | null;
   consumptionTaxRate: number | null;
+  deletionFlag: string;
 }
 
 @Component({
@@ -297,15 +312,15 @@ interface EmployeeMaster {
 })
 export class AppComponent implements OnInit {
   private readonly http = inject(HttpClient);
-  private readonly billingApiUrl = 'http://localhost:8080/api/billing-requests';
-  private readonly insuranceApiUrl = 'http://localhost:8080/api/insurance';
-  private readonly payrollApiUrl = 'http://localhost:8080/api/payroll/slips';
-  private readonly salaryCalculationApiUrl = 'http://localhost:8080/api/payroll/calculations';
-  private readonly customersApiUrl = 'http://localhost:8080/api/customers';
-  private readonly contractsApiUrl = 'http://localhost:8080/api/contracts';
-  private readonly salesApiUrl = 'http://localhost:8080/api/sales';
-  private readonly employeesApiUrl = 'http://localhost:8080/api/employees';
-  private readonly attendanceApiUrl = 'http://localhost:8080/api/attendance';
+  private readonly billingApiUrl = 'http://localhost:9000/api/billing-requests';
+  private readonly insuranceApiUrl = 'http://localhost:9000/api/insurance';
+  private readonly payrollApiUrl = 'http://localhost:9000/api/payroll/slips';
+  private readonly salaryCalculationApiUrl = 'http://localhost:9000/api/payroll/calculations';
+  private readonly customersApiUrl = 'http://localhost:9000/api/customers';
+  private readonly contractsApiUrl = 'http://localhost:9000/api/contracts';
+  private readonly salesApiUrl = 'http://localhost:9000/api/sales';
+  private readonly employeesApiUrl = 'http://localhost:9000/api/employees';
+  private readonly attendanceApiUrl = 'http://localhost:9000/api/attendance';
 
   activeView: ViewName = 'contractList';
   registerMessage = '';
@@ -333,6 +348,9 @@ export class AppComponent implements OnInit {
   private readonly employeeMasterByNo = new Map<string, EmployeeMaster>();
   contractMessage = '';
   orderDocumentDialog: OrderDocumentDialog | null = null;
+  documentCreationAction: DocumentCreationAction | null = null;
+  documentCreationMonth = this.currentMonthInput();
+  documentCreationMonthOptions = this.createMonthOptions();
   customerOptions: CustomerOption[] = [];
   contractResults: ContractListItem[] = [];
   editingContract: ContractListItem | null = null;
@@ -358,7 +376,12 @@ export class AppComponent implements OnInit {
   profitAnalysisResults: ProfitAnalysisItem[] = [];
   employeeMessage = '';
   employees: EmployeeMaster[] = [];
+  includeBpEmployees = false;
   editingEmployee: EmployeeMaster | null = null;
+  employeeCreateMode = false;
+  customerMessage = '';
+  editingCustomer: CustomerOption | null = null;
+  customerCreateMode = false;
   attendanceMessage = '';
   attendanceResults: AttendanceItem[] = [];
   attendanceRegisterRows: AttendanceBulkRow[] = [];
@@ -414,6 +437,7 @@ export class AppComponent implements OnInit {
     this.salaryConditionMessage = '';
     this.contractMessage = '';
     this.orderDocumentDialog = null;
+    this.documentCreationAction = null;
     this.salesMessage = '';
     this.salesAnalysisMessage = '';
     this.profitAnalysisMessage = '';
@@ -449,6 +473,9 @@ export class AppComponent implements OnInit {
     }
     if (view === 'employeeList') {
       this.loadEmployees();
+    }
+    if (view === 'customerList') {
+      this.loadCustomerList();
     }
     if (view === 'attendanceSearch' || view === 'attendanceBulk') {
       this.attendanceResults = [];
@@ -598,6 +625,65 @@ export class AppComponent implements OnInit {
     });
   }
 
+  loadCustomerList(): void {
+    this.customerMessage = '';
+    this.http.get<CustomerOption[]>(this.customersApiUrl).subscribe({
+      next: (customers) => {
+        this.customerOptions = customers;
+        this.customerMessage = `${customers.length}\u4ef6\u8868\u793a\u3057\u307e\u3057\u305f\u3002`;
+      },
+      error: () => {
+        this.customerMessage = '\u53d6\u5f15\u5148\u4e00\u89a7\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
+      }
+    });
+  }
+
+  openCustomerCreate(): void {
+    this.customerMessage = '';
+    this.customerCreateMode = true;
+    this.editingCustomer = { companyId: '', companyName: '' };
+  }
+
+  openCustomerEdit(customer: CustomerOption): void {
+    this.customerMessage = '';
+    this.customerCreateMode = false;
+    this.editingCustomer = { ...customer };
+  }
+
+  closeCustomerEdit(): void {
+    this.editingCustomer = null;
+    this.customerCreateMode = false;
+  }
+
+  saveCustomerEdit(): void {
+    if (!this.editingCustomer) {
+      return;
+    }
+
+    const request = this.editingCustomer;
+    const creating = this.customerCreateMode;
+    const saveRequest = creating
+      ? this.http.post<CustomerOption>(this.customersApiUrl, request)
+      : this.http.put<CustomerOption>(`${this.customersApiUrl}/${request.companyId}`, request);
+    saveRequest.subscribe({
+      next: (saved) => {
+        this.customerOptions = creating
+          ? [...this.customerOptions, saved].sort((left, right) => left.companyId.localeCompare(right.companyId))
+          : this.customerOptions.map((customer) => customer.companyId === saved.companyId ? saved : customer);
+        this.editingCustomer = null;
+        this.customerCreateMode = false;
+        this.customerMessage = creating
+          ? '\u53d6\u5f15\u5148\u60c5\u5831\u3092\u65b0\u898f\u767b\u9332\u3057\u307e\u3057\u305f\u3002'
+          : '\u53d6\u5f15\u5148\u60c5\u5831\u3092\u8a02\u6b63\u3057\u307e\u3057\u305f\u3002';
+      },
+      error: () => {
+        this.customerMessage = creating
+          ? '\u53d6\u5f15\u5148\u306e\u65b0\u898f\u767b\u9332\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002'
+          : '\u53d6\u5f15\u5148\u306e\u8a02\u6b63\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
+      }
+    });
+  }
+
   searchContracts(page = 0): void {
     this.contractMessage = '';
     let params = new HttpParams()
@@ -739,12 +825,59 @@ export class AppComponent implements OnInit {
   }
 
   showContractOrderButton(row: ContractListItem): boolean {
-    return row.engineerCompanyName?.trim() !== '株式会社CMCソフト';
+    const engineerCompanyName = row.engineerCompanyName?.trim() ?? '';
+    return engineerCompanyName !== ''
+      && engineerCompanyName !== '0000'
+      && engineerCompanyName !== '株式会社CMCソフト';
   }
 
   createOrderDocument(row: ContractListItem): void {
+    this.openDocumentCreationMonth({ type: 'order', bulk: false, row });
+  }
+
+  createOrderDocumentsBulk(): void {
+    this.openDocumentCreationMonth({ type: 'order', bulk: true });
+  }
+
+  createInvoiceDocument(row: ContractListItem): void {
+    this.openDocumentCreationMonth({ type: 'invoice', bulk: false, row });
+  }
+
+  createInvoiceDocumentsBulk(): void {
+    this.openDocumentCreationMonth({ type: 'invoice', bulk: true });
+  }
+
+  openDocumentCreationMonth(action: DocumentCreationAction): void {
     this.contractMessage = '';
-    this.http.post<OrderDocumentResponse>(`${this.contractsApiUrl}/${row.contractNo}/order-document`, {}).subscribe({
+    this.documentCreationAction = action;
+    this.documentCreationMonth = this.currentMonthInput();
+  }
+
+  closeDocumentCreationMonth(): void {
+    this.documentCreationAction = null;
+  }
+
+  confirmDocumentCreation(): void {
+    if (!this.documentCreationAction || !this.documentCreationMonth) {
+      return;
+    }
+    const action = this.documentCreationAction;
+    const targetMonth = this.documentCreationMonth;
+    this.documentCreationAction = null;
+    if (action.type === 'order' && action.bulk) {
+      this.executeOrderDocumentsBulk(targetMonth);
+    } else if (action.type === 'order') {
+      this.executeOrderDocument(action.row, targetMonth);
+    } else if (action.bulk) {
+      this.executeInvoiceDocumentsBulk(targetMonth);
+    } else {
+      this.executeInvoiceDocument(action.row, targetMonth);
+    }
+  }
+
+  executeOrderDocument(row: ContractListItem, targetMonth: string): void {
+    this.contractMessage = '';
+    this.http.post<OrderDocumentResponse>(`${this.contractsApiUrl}/${row.contractNo}/order-document`, { targetMonth }).subscribe({
       next: (response) => {
         this.orderDocumentDialog = {
           title: '注文書作成完了',
@@ -759,9 +892,9 @@ export class AppComponent implements OnInit {
     });
   }
 
-  createOrderDocumentsBulk(): void {
+  executeOrderDocumentsBulk(targetMonth: string): void {
     this.contractMessage = '';
-    this.http.post<OrderDocumentBulkResponse>(`${this.contractsApiUrl}/order-documents/bulk`, {}).subscribe({
+    this.http.post<OrderDocumentBulkResponse>(`${this.contractsApiUrl}/order-documents/bulk`, { targetMonth }).subscribe({
       next: (response) => {
         this.orderDocumentDialog = {
           title: '注文書一括作成完了',
@@ -780,9 +913,9 @@ export class AppComponent implements OnInit {
     this.orderDocumentDialog = null;
   }
 
-  createInvoiceDocument(row: ContractListItem): void {
+  executeInvoiceDocument(row: ContractListItem, targetMonth: string): void {
     this.contractMessage = '';
-    this.http.post<InvoiceDocumentResponse>(`${this.contractsApiUrl}/${row.contractNo}/invoice-document`, {}).subscribe({
+    this.http.post<InvoiceDocumentResponse>(`${this.contractsApiUrl}/${row.contractNo}/invoice-document`, { targetMonth }).subscribe({
       next: (response) => {
         this.orderDocumentDialog = {
           title: '請求書作成完了',
@@ -793,6 +926,23 @@ export class AppComponent implements OnInit {
       },
       error: () => {
         this.contractMessage = '請求書の出力に失敗しました。対象契約と請求書テンプレートを確認してください。';
+      }
+    });
+  }
+
+  executeInvoiceDocumentsBulk(targetMonth: string): void {
+    this.contractMessage = '';
+    this.http.post<InvoiceDocumentBulkResponse>(`${this.contractsApiUrl}/invoice-documents/bulk`, { targetMonth }).subscribe({
+      next: (response) => {
+        this.orderDocumentDialog = {
+          title: '請求書一括作成完了',
+          message: `${response.createdCount}件の請求書を作成しました。`,
+          fileName: response.fileNames.join('\n'),
+          filePath: response.outputDirectory
+        };
+      },
+      error: () => {
+        this.contractMessage = '請求書の一括作成に失敗しました。対象契約と請求書テンプレートを確認してください。';
       }
     });
   }
@@ -1045,7 +1195,8 @@ export class AppComponent implements OnInit {
   }
 
   isSalaryConditionEditable(): boolean {
-    return this.isSalaryConditionCurrentMonth() && !this.salaryDetailsRegistered;
+    const paymentMonth = this.normalizeMonth(this.salaryConditionPaymentMonth);
+    return [this.currentMonthCompact(), this.nextMonthCompact()].includes(paymentMonth);
   }
 
   canCreateSalaryDetails(): boolean {
@@ -1096,15 +1247,85 @@ export class AppComponent implements OnInit {
 
   openEmployeeEdit(employee: EmployeeMaster): void {
     this.employeeMessage = '';
-    this.editingEmployee = { ...employee };
+    this.employeeCreateMode = false;
+    const legacyNameParts = (employee.employeeName ?? '').replace(/　/g, ' ').trim().split(/\s+/);
+    this.editingEmployee = {
+      ...employee,
+      lastName: employee.lastName || legacyNameParts[0] || '',
+      firstName: employee.firstName || legacyNameParts.slice(1).join(' ') || ''
+    };
+  }
+
+  openEmployeeCreate(): void {
+    this.employeeMessage = '';
+    this.employeeCreateMode = true;
+    this.editingEmployee = {
+      employeeNo: this.nextEmployeeNumberFromLoadedList(),
+      employeeName: '',
+      lastName: '',
+      firstName: '',
+      employeeType: '0',
+      baseSalary: 0,
+      dependentCount: 0,
+      deductionCount: 0,
+      consumptionTaxRate: 0,
+      deletionFlag: '0'
+    };
+    this.http.get<string>(`${this.employeesApiUrl}/next-number`).subscribe({
+      next: (employeeNo) => {
+        if (this.employeeCreateMode && this.editingEmployee) {
+          this.editingEmployee.employeeNo = employeeNo;
+        }
+      },
+      error: () => {
+        this.employeeMessage = '\u6b21\u306e\u793e\u54e1\u756a\u53f7\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u305f\u305f\u3081\u3001\u4e00\u89a7\u306e\u793e\u54e1\u756a\u53f7\u304b\u3089\u4eee\u756a\u53f7\u3092\u8868\u793a\u3057\u307e\u3057\u305f\u3002';
+      }
+    });
+  }
+
+  employeeDisplayName(employee: EmployeeMaster): string {
+    const splitName = `${employee.lastName ?? ''} ${employee.firstName ?? ''}`.trim();
+    return splitName || employee.employeeName || '';
+  }
+
+  get employeeListRows(): EmployeeMaster[] {
+    return this.includeBpEmployees
+      ? this.employees
+      : this.employees.filter((employee) => employee.employeeType !== '2');
+  }
+
+  private nextEmployeeNumberFromLoadedList(): string {
+    const maxEmployeeNo = this.employees
+      .map((employee) => Number.parseInt(employee.employeeNo, 10))
+      .filter((employeeNo) => Number.isFinite(employeeNo))
+      .reduce((max, employeeNo) => Math.max(max, employeeNo), 0);
+    return String(maxEmployeeNo + 1).padStart(4, '0');
   }
 
   closeEmployeeEdit(): void {
     this.editingEmployee = null;
+    this.employeeCreateMode = false;
   }
 
   saveEmployeeEdit(): void {
     if (!this.editingEmployee) {
+      return;
+    }
+
+    if (this.employeeCreateMode) {
+      this.http.post<EmployeeMaster>(this.employeesApiUrl, this.editingEmployee).subscribe({
+        next: (saved) => {
+          this.employees = [...this.employees, saved].sort((left, right) =>
+            left.employeeNo.localeCompare(right.employeeNo));
+          this.updateEmployeeMasterMap(this.employees);
+          this.editingEmployee = null;
+          this.employeeCreateMode = false;
+          this.employeeMessage = '\u793e\u54e1\u60c5\u5831\u3092\u65b0\u898f\u767b\u9332\u3057\u307e\u3057\u305f\u3002';
+        },
+        error: () => {
+          this.employeeMessage = '\u793e\u54e1\u60c5\u5831\u306e\u65b0\u898f\u767b\u9332\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
+        }
+      });
       return;
     }
 
@@ -1623,8 +1844,30 @@ export class AppComponent implements OnInit {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }
 
+  private createMonthOptions(): string[] {
+    const base = new Date();
+    base.setDate(1);
+    return Array.from({ length: 25 }, (_, index) => {
+      const date = new Date(base.getFullYear(), base.getMonth() + index - 12, 1);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    });
+  }
+
+  documentCreationMonthLabel(value: string): string {
+    const compact = value.replace(/[^0-9]/g, '');
+    return compact.length === 6
+      ? `${compact.slice(0, 4)}年${compact.slice(4, 6)}月`
+      : value;
+  }
+
   private currentMonthCompact(): string {
     return this.currentMonthInput().replace('-', '');
+  }
+
+  private nextMonthCompact(): string {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return `${next.getFullYear()}${String(next.getMonth() + 1).padStart(2, '0')}`;
   }
 
   private normalizeMonth(value: string): string {

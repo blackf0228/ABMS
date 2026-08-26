@@ -122,9 +122,11 @@ public class SalesController {
 
     String detailSql = """
         select
-          s.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, s.engineer_name) as engineer_name,
           s.billing_amount
         from sales_imports s
+        left join employee_masters e
+          on e.employee_no = s.engineer_name
         where s.billing_source_company_id = '0000'
           and s.billing_month between :startMonth and :endMonth
           and s.billing_destination_company_id = :billingDestinationCompanyId

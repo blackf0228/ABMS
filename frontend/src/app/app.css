@@ -755,6 +755,19 @@ tbody tr:hover {
   margin-top: 0;
 }
 
+.employee-filter-checkbox {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.employee-filter-checkbox input[type="checkbox"] {
+  height: 18px;
+  margin: 0;
+  width: 18px;
+}
+
 .contract-table {
   min-width: 1320px;
 }
@@ -1315,6 +1328,20 @@ tbody tr:hover {
 .modal-form input:disabled {
   background: #f4efe4;
   color: #7b6a55;
+}
+
+.modal-form .checkbox-label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  grid-template-columns: none;
+  min-height: 38px;
+}
+
+.modal-form .checkbox-label input[type="checkbox"] {
+  height: 18px;
+  margin: 0;
+  width: 18px;
 }
 
 .modal-actions {

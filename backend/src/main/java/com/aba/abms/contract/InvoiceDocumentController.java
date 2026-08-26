@@ -15,6 +15,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,6 +33,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -62,7 +64,9 @@ public class InvoiceDocumentController {
   }
 
   @PostMapping("/{contractNo}/invoice-document")
-  public InvoiceDocumentResponse create(@PathVariable Integer contractNo) throws IOException {
+  public InvoiceDocumentResponse create(
+      @PathVariable Integer contractNo,
+      @RequestBody DocumentCreationRequest request) throws IOException {
     String customerName = jdbcTemplate.queryForObject(
         "select customer_name from contracts where contract_no = :contractNo",
         Map.of("contractNo", contractNo),
@@ -71,7 +75,7 @@ public class InvoiceDocumentController {
       throw new IllegalStateException("取引先名を取得できません。");
     }
 
-    YearMonth currentMonth = YearMonth.now();
+    YearMonth currentMonth = request.toYearMonth();
     List<InvoiceItem> items = findInvoiceItems(customerName, currentMonth);
     if (items.isEmpty()) {
       throw new IllegalStateException("請求書の対象となる契約がありません。");
@@ -79,18 +83,56 @@ public class InvoiceDocumentController {
     return generateInvoice(customerName, items, currentMonth);
   }
 
+  @PostMapping("/invoice-documents/bulk")
+  public InvoiceDocumentBulkResponse createBulk(@RequestBody DocumentCreationRequest request) throws IOException {
+    YearMonth targetMonth = request.toYearMonth();
+    List<String> customerNames = findBulkCustomerNames(targetMonth);
+    List<String> fileNames = new ArrayList<>();
+    for (String customerName : customerNames) {
+      List<InvoiceItem> items = findInvoiceItems(customerName, targetMonth);
+      if (!items.isEmpty()) {
+        fileNames.add(generateInvoice(customerName, items, targetMonth).fileName());
+      }
+    }
+    return new InvoiceDocumentBulkResponse(
+        fileNames.size(),
+        fileNames,
+        resolveProjectRoot().resolve("output").resolve("請求書").toString());
+  }
+
+  private List<String> findBulkCustomerNames(YearMonth targetMonth) {
+    return jdbcTemplate.queryForList("""
+        select distinct c.customer_name
+        from contracts c
+        left join customer_masters customer
+          on customer.company_name = c.customer_name
+        where customer.company_id is not null
+          and customer.company_id <> '0000'
+          and c.operation_status = '契約中'
+          and c.contract_start_date <= :monthEnd
+          and (c.contract_end_date is null or c.contract_end_date >= :monthStart)
+        order by c.customer_name
+        """,
+        Map.of(
+            "monthStart", targetMonth.atDay(1),
+            "monthEnd", targetMonth.atEndOfMonth()),
+        String.class);
+  }
+
   private List<InvoiceItem> findInvoiceItems(String customerName, YearMonth currentMonth) {
     return jdbcTemplate.query(
         """
         select
           c.contract_no,
-          c.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', engineer.last_name, engineer.first_name)), ''), engineer.employee_name, c.engineer_name) as engineer_name,
           c.contract_amount,
           c.engineer_unit_price,
           c.settlement_lower_hour,
           c.settlement_upper_hour,
           a.working_hours
         from contracts c
+        left join employee_masters engineer
+          on engineer.employee_no = c.engineer_name
         left join attendance_hours a
           on a.contract_no = c.contract_no
          and a.engineer_name = c.engineer_name
@@ -149,7 +191,7 @@ public class InvoiceDocumentController {
   private static void fillHeader(Sheet sheet, String customerName, YearMonth currentMonth, BigDecimal total) {
     replaceText(sheet, "【発行年月日】", currentMonth.atEndOfMonth().plusDays(1).format(DATE_FORMAT));
     replaceText(sheet, "【取引先名】", customerName);
-    replaceText(sheet, "【支払期日】", currentMonth.plusMonths(3).atEndOfMonth().format(DATE_FORMAT));
+    replaceText(sheet, "【支払期日】", currentMonth.plusMonths(2).atEndOfMonth().format(DATE_FORMAT));
     replaceNumber(sheet, "【合計結果】", total);
   }
 
@@ -193,11 +235,15 @@ public class InvoiceDocumentController {
 
       Integer lowerHour = resolvedHour(item.settlementLowerHour(), 8 * workingDays - 4);
       Integer upperHour = resolvedHour(item.settlementUpperHour(), 8 * workingDays + 20);
-      BigDecimal underUnitPrice = unitPrice(item.engineerUnitPrice(), lowerHour);
-      BigDecimal overUnitPrice = unitPrice(item.engineerUnitPrice(), upperHour);
+      BigDecimal underUnitPrice = unitPrice(item.contractAmount(), lowerHour, 10);
+      BigDecimal overUnitPrice = item.settlementUpperHour() != null
+          && item.settlementUpperHour() == 999
+              ? unitPrice(item.contractAmount(), 160, 10)
+              : unitPrice(item.contractAmount(), upperHour, 10);
       BigDecimal workingHours = item.workingHours();
 
-      if (workingHours != null && upperHour != null && overUnitPrice != null
+      if (workingHours != null && workingHours.compareTo(BigDecimal.ZERO) != 0
+          && upperHour != null && overUnitPrice != null
           && workingHours.compareTo(BigDecimal.valueOf(upperHour)) > 0) {
         BigDecimal quantity = workingHours.subtract(BigDecimal.valueOf(upperHour));
         details.add(new InvoiceDetail(
@@ -208,7 +254,8 @@ public class InvoiceDocumentController {
             item.engineerName(),
             true));
       }
-      if (workingHours != null && lowerHour != null && underUnitPrice != null
+      if (workingHours != null && workingHours.compareTo(BigDecimal.ZERO) != 0
+          && lowerHour != null && underUnitPrice != null
           && workingHours.compareTo(BigDecimal.valueOf(lowerHour)) < 0) {
         BigDecimal quantity = BigDecimal.valueOf(lowerHour).subtract(workingHours);
         details.add(new InvoiceDetail(
@@ -230,14 +277,15 @@ public class InvoiceDocumentController {
     return configuredHour == 999 ? calculatedHour : configuredHour;
   }
 
-  private static BigDecimal unitPrice(BigDecimal engineerUnitPrice, Integer hour) {
-    if (engineerUnitPrice == null || hour == null || hour <= 0) {
+  private static BigDecimal unitPrice(
+      BigDecimal contractAmount, Integer hour, int roundingUnit) {
+    if (contractAmount == null || hour == null || hour <= 0) {
       return null;
     }
-    return engineerUnitPrice
+    return contractAmount
         .divide(BigDecimal.valueOf(hour), 10, RoundingMode.DOWN)
-        .divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN)
-        .multiply(BigDecimal.valueOf(100));
+        .divide(BigDecimal.valueOf(roundingUnit), 0, RoundingMode.DOWN)
+        .multiply(BigDecimal.valueOf(roundingUnit));
   }
 
   private static int businessDays(YearMonth month) {

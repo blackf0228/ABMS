@@ -39,13 +39,13 @@ Open a second PowerShell terminal:
 Backend URL:
 
 ```text
-http://localhost:8080
+http://localhost:9000
 ```
 
 Hello API:
 
 ```text
-http://localhost:8080/api/hello
+http://localhost:9000/api/hello
 ```
 
 Expected API response:

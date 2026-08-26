@@ -34,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContractController {
 
   private static final int DEFAULT_PAGE_SIZE = 30;
+  private static final String ENGINEER_DISPLAY_SQL = "coalesce(nullif(trim(concat_ws(' ', engineer.last_name, engineer.first_name)), ''), engineer.employee_name, c.engineer_name)";
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
 
@@ -63,12 +64,14 @@ public class ContractController {
           on customer.company_name = c.customer_name
         left join customer_masters engineer_company
           on engineer_company.company_name = c.engineer_company_name
+        left join employee_masters engineer
+          on engineer.employee_no = c.engineer_name
         where 1 = 1
         """);
     Map<String, Object> params = new HashMap<>();
 
     if (engineerName != null && !engineerName.isBlank()) {
-      fromWhere.append(" and c.engineer_name like :engineerName ");
+      fromWhere.append(" and " + ENGINEER_DISPLAY_SQL + " like :engineerName ");
       params.put("engineerName", "%" + engineerName.trim() + "%");
     }
     if ("今期".equals(operationStatus)) {
@@ -119,26 +122,14 @@ public class ContractController {
 
     params.put("limit", pageSize);
     params.put("offset", offset);
-    String sql = """
-        select
-          c.contract_no,
-          c.engineer_type,
-          c.engineer_name,
-          c.contract_amount,
-          c.customer_name,
-          c.engineer_unit_price,
-          c.engineer_company_name,
-          c.operation_status,
-          c.contract_start_date,
-          c.contract_end_date,
-          c.project_affiliation,
-          c.engineer_proposer,
-          c.settlement_lower_hour,
-          c.settlement_upper_hour
-        """ + fromWhere + """
-        order by c.engineer_name, c.operation_status, c.contract_start_date, c.contract_no
-        limit :limit offset :offset
-        """;
+    String sql = "select c.contract_no, c.engineer_type, "
+        + ENGINEER_DISPLAY_SQL + " as engineer_name, c.contract_amount, c.customer_name, "
+        + "c.engineer_unit_price, c.engineer_company_name, c.operation_status, "
+        + "c.contract_start_date, c.contract_end_date, c.project_affiliation, c.engineer_proposer, "
+        + "c.settlement_lower_hour, c.settlement_upper_hour "
+        + fromWhere
+        + " order by " + ENGINEER_DISPLAY_SQL
+        + " , c.operation_status, c.contract_start_date, c.contract_no limit :limit offset :offset";
 
     List<ContractListItem> items = jdbcTemplate.query(sql, params, new ContractListItemMapper());
     int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / pageSize);
@@ -158,7 +149,7 @@ public class ContractController {
         Map.of(),
         Integer.class);
     Map<String, Object> params = contractParams(contractNo, request);
-    params.put("engineerName", blankToNull(request.engineerName()));
+    params.put("engineerName", resolveEngineerEmployeeNo(request.engineerName()));
 
     jdbcTemplate.update("""
         insert into contracts (
@@ -267,9 +258,32 @@ public class ContractController {
           c.settlement_lower_hour,
           c.settlement_upper_hour
         from contracts c
+        left join employee_masters engineer
+          on engineer.employee_no = c.engineer_name
         where c.contract_no = :contractNo
         """;
     return jdbcTemplate.queryForObject(sql, Map.of("contractNo", contractNo), new ContractListItemMapper());
+  }
+
+  private String resolveEngineerEmployeeNo(String value) {
+    String normalized = blankToNull(value);
+    if (normalized == null) {
+      return null;
+    }
+    Integer exists = jdbcTemplate.queryForObject(
+        "select count(*) from employee_masters where employee_no = :employeeNo",
+        Map.of("employeeNo", normalized), Integer.class);
+    if (exists != null && exists > 0) {
+      return normalized;
+    }
+    return jdbcTemplate.queryForObject("""
+        select employee_no
+        from employee_masters
+        where replace(replace(trim(coalesce(last_name, '') || ' ' || coalesce(first_name, '')), ' ', ''), '　', '')
+            = replace(replace(trim(:engineerName), ' ', ''), '　', '')
+        order by case when deletion_flag = '0' then 0 else 1 end, employee_no
+        limit 1
+        """, Map.of("engineerName", normalized), String.class);
   }
 
   private static int normalizeSize(int size) {
