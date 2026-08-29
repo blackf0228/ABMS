@@ -111,8 +111,14 @@ public class SalaryCalculationController {
       if (row.employeeNo() == null || row.employeeNo().isBlank()) {
         continue;
       }
-      boolean employeeTypeOne = isEmployeeTypeOne(findEmployeeType(row.employeeNo()));
+      String employeeType = findEmployeeType(row.employeeNo());
+      boolean employeeTypeOne = isEmployeeTypeOne(employeeType);
       boolean employmentInsuranceExempt = isEmploymentInsuranceExemptEmployee(row.employeeNo());
+      CompanyBurden companyBurden = calculateCompanyBurden(
+          employeeType,
+          row.employeeNo(),
+          targetMonth,
+          amount(row.remunerationAmount()));
       Map<String, Object> params = new HashMap<>();
       params.put("employeeNo", row.employeeNo().trim());
       params.put("paymentMonth", targetMonth);
@@ -123,6 +129,12 @@ public class SalaryCalculationController {
       params.put("childSupportAmount", employeeTypeOne ? ZERO : amount(row.childSupportAmount()));
       params.put("taxableIncome", employeeTypeOne ? ZERO : amount(row.taxableIncome()));
       params.put("transferPaymentAmount", amount(row.transferPaymentAmount()));
+      params.put("companyEmploymentInsuranceAmount", companyBurden.employmentInsurance());
+      params.put("workersAccidentInsuranceAmount", companyBurden.workersAccident());
+      params.put("companyPensionInsuranceAmount", companyBurden.pensionInsurance());
+      params.put("companyHealthInsuranceAmount", companyBurden.healthInsurance());
+      params.put("companyChildSupportAmount", companyBurden.childSupport());
+      params.put("companyTotalAmount", companyBurden.total());
       jdbcTemplate.update("""
           insert into monthly_salary_details (
             employee_no,
@@ -133,7 +145,13 @@ public class SalaryCalculationController {
             income_tax,
             child_support_amount,
             taxable_income,
-            transfer_payment_amount
+            transfer_payment_amount,
+            company_employment_insurance_amount,
+            workers_accident_insurance_amount,
+            company_pension_insurance_amount,
+            company_health_insurance_amount,
+            company_child_support_amount,
+            company_total_amount
           ) values (
             :employeeNo,
             :paymentMonth,
@@ -143,7 +161,13 @@ public class SalaryCalculationController {
             :incomeTax,
             :childSupportAmount,
             :taxableIncome,
-            :transferPaymentAmount
+            :transferPaymentAmount,
+            :companyEmploymentInsuranceAmount,
+            :workersAccidentInsuranceAmount,
+            :companyPensionInsuranceAmount,
+            :companyHealthInsuranceAmount,
+            :companyChildSupportAmount,
+            :companyTotalAmount
           )
           on conflict (employee_no, payment_month) do update set
             employment_insurance_amount = excluded.employment_insurance_amount,
@@ -152,7 +176,13 @@ public class SalaryCalculationController {
             income_tax = excluded.income_tax,
             child_support_amount = excluded.child_support_amount,
             taxable_income = excluded.taxable_income,
-            transfer_payment_amount = excluded.transfer_payment_amount
+            transfer_payment_amount = excluded.transfer_payment_amount,
+            company_employment_insurance_amount = excluded.company_employment_insurance_amount,
+            workers_accident_insurance_amount = excluded.workers_accident_insurance_amount,
+            company_pension_insurance_amount = excluded.company_pension_insurance_amount,
+            company_health_insurance_amount = excluded.company_health_insurance_amount,
+            company_child_support_amount = excluded.company_child_support_amount,
+            company_total_amount = excluded.company_total_amount
           """, params);
     }
     return request.rows();
@@ -398,6 +428,73 @@ public class SalaryCalculationController {
     return money(remuneration.multiply(rates.get(0)));
   }
 
+  private CompanyBurden calculateCompanyBurden(
+      String employeeType,
+      String employeeNo,
+      String paymentMonth,
+      BigDecimal remuneration) {
+    if (!isRegularEmployee(employeeType)) {
+      return CompanyBurden.ZERO;
+    }
+
+    LocalDate targetDate = paymentMonthDate(paymentMonth);
+    List<BigDecimal> employerRates = jdbcTemplate.query("""
+        select employer_rate
+        from employment_insurance_rates
+        where effective_start_date <= :targetDate
+          and effective_end_date >= :targetDate
+        order by no
+        limit 1
+        """, Map.of("targetDate", targetDate),
+        (rs, rowNum) -> rs.getBigDecimal("employer_rate"));
+    BigDecimal employmentInsurance = isEmploymentInsuranceExemptEmployee(employeeNo)
+        ? ZERO
+        : employerRates.isEmpty()
+            ? ZERO
+            : decimalTwo(remuneration.multiply(amount(employerRates.get(0))));
+    BigDecimal workersAccident = isEmploymentInsuranceExemptEmployee(employeeNo)
+        ? ZERO
+        : decimalTwo(remuneration.multiply(BigDecimal.valueOf(0.003)));
+    CompanyPremium premium = findCompanyPremium(paymentMonth, remuneration);
+    BigDecimal pensionInsurance = premium.pensionInsurance();
+    BigDecimal healthInsurance = decimalOne(premium.healthInsurance());
+    BigDecimal childSupport = decimalOne(premium.childSupport());
+    BigDecimal total = employmentInsurance
+        .add(workersAccident)
+        .add(pensionInsurance)
+        .add(healthInsurance)
+        .add(childSupport);
+    return new CompanyBurden(
+        employmentInsurance,
+        workersAccident,
+        pensionInsurance,
+        healthInsurance,
+        childSupport,
+        total);
+  }
+
+  private CompanyPremium findCompanyPremium(String paymentMonth, BigDecimal remuneration) {
+    Map<String, Object> params = new HashMap<>();
+    params.put("paymentMonth", paymentMonth);
+    params.put("remuneration", remuneration);
+    List<CompanyPremium> premiums = jdbcTemplate.query("""
+        select
+          coalesce(health_insurance_employer_amount, 0) as health_insurance_employer_amount,
+          coalesce(pension_insurance_employer_amount, 0) as pension_insurance_employer_amount,
+          coalesce(child_support_employer_amount, 0) as child_support_employer_amount
+        from social_insurance_premium_amounts
+        where replace(payment_month, '-', '') <= :paymentMonth
+          and (monthly_remuneration_from is null or monthly_remuneration_from <= :remuneration)
+          and (monthly_remuneration_to is null or monthly_remuneration_to > :remuneration)
+        order by replace(payment_month, '-', '') desc, no
+        limit 1
+        """, params, (rs, rowNum) -> new CompanyPremium(
+            amount(rs, "health_insurance_employer_amount"),
+            amount(rs, "pension_insurance_employer_amount"),
+            amount(rs, "child_support_employer_amount")));
+    return premiums.isEmpty() ? CompanyPremium.ZERO : premiums.get(0);
+  }
+
   private SocialPremium findSocialPremium(String paymentMonth, BigDecimal remuneration) {
     Map<String, Object> params = new HashMap<>();
     params.put("paymentMonth", paymentMonth);
@@ -509,6 +606,10 @@ public class SalaryCalculationController {
     return employeeType != null && "1".equals(employeeType.trim());
   }
 
+  private static boolean isRegularEmployee(String employeeType) {
+    return employeeType != null && "0".equals(employeeType.trim());
+  }
+
   private static boolean isEmploymentInsuranceExemptEmployee(String employeeNo) {
     return employeeNo != null && "0010".equals(employeeNo.trim());
   }
@@ -546,6 +647,10 @@ public class SalaryCalculationController {
     return amount(value).setScale(1, RoundingMode.HALF_UP);
   }
 
+  private static BigDecimal decimalTwo(BigDecimal value) {
+    return amount(value).setScale(2, RoundingMode.HALF_UP);
+  }
+
   private static BigDecimal truncate(BigDecimal value) {
     return amount(value).setScale(0, RoundingMode.DOWN);
   }
@@ -555,6 +660,34 @@ public class SalaryCalculationController {
       BigDecimal pensionInsuranceEmployeeAmount,
       BigDecimal childSupportEmployeeAmount
   ) {
+  }
+
+  private record CompanyPremium(
+      BigDecimal healthInsurance,
+      BigDecimal pensionInsurance,
+      BigDecimal childSupport
+  ) {
+    private static final CompanyPremium ZERO = new CompanyPremium(
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO);
+  }
+
+  private record CompanyBurden(
+      BigDecimal employmentInsurance,
+      BigDecimal workersAccident,
+      BigDecimal pensionInsurance,
+      BigDecimal healthInsurance,
+      BigDecimal childSupport,
+      BigDecimal total
+  ) {
+    private static final CompanyBurden ZERO = new CompanyBurden(
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO,
+        SalaryCalculationController.ZERO);
   }
 
   private record IncomeTaxRate(

@@ -82,7 +82,7 @@ public class PayrollSlipController {
         from employee_masters e
         join monthly_salary_calculation_conditions c
           on c.employee_no = e.employee_no
-        left join monthly_salary_details d
+        join monthly_salary_details d
           on d.employee_no = e.employee_no
          and d.payment_month = c.payment_month
         left join employee_resident_tax_details r
@@ -145,7 +145,7 @@ public class PayrollSlipController {
         from employee_masters e
         join monthly_salary_calculation_conditions c
           on c.employee_no = e.employee_no
-        left join monthly_salary_details d
+        join monthly_salary_details d
           on d.employee_no = e.employee_no
          and d.payment_month = c.payment_month
         left join employee_resident_tax_details r

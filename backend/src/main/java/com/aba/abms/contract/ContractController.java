@@ -48,6 +48,8 @@ public class ContractController {
       @RequestParam(required = false) String operationStatus,
       @RequestParam(required = false) String contractStartDateFrom,
       @RequestParam(required = false) String contractEndDateTo,
+      @RequestParam(required = false) String effectiveMonthFrom,
+      @RequestParam(required = false) String effectiveMonthTo,
       @RequestParam(required = false) String customerId,
       @RequestParam(required = false) String engineerCompanyId,
       @RequestParam(required = false) String projectAffiliation,
@@ -97,6 +99,14 @@ public class ContractController {
     if (contractEndDateTo != null && !contractEndDateTo.isBlank()) {
       fromWhere.append(" and c.contract_end_date <= cast(:contractEndDateTo as date) ");
       params.put("contractEndDateTo", contractEndDateTo.trim());
+    }
+    if (effectiveMonthFrom != null && !effectiveMonthFrom.isBlank()) {
+      fromWhere.append(" and (c.contract_end_date is null or c.contract_end_date >= cast(:effectiveMonthFrom || '-01' as date)) ");
+      params.put("effectiveMonthFrom", effectiveMonthFrom.trim());
+    }
+    if (effectiveMonthTo != null && !effectiveMonthTo.isBlank()) {
+      fromWhere.append(" and c.contract_start_date <= (cast(:effectiveMonthTo || '-01' as date) + interval '1 month - 1 day') ");
+      params.put("effectiveMonthTo", effectiveMonthTo.trim());
     }
     if (customerId != null && !customerId.isBlank()) {
       fromWhere.append(" and customer.company_id = :customerId ");
@@ -245,7 +255,7 @@ public class ContractController {
         select
           c.contract_no,
           c.engineer_type,
-          c.engineer_name,
+          coalesce(nullif(trim(concat_ws(' ', engineer.last_name, engineer.first_name)), ''), engineer.employee_name, c.engineer_name) as engineer_name,
           c.contract_amount,
           c.customer_name,
           c.engineer_unit_price,

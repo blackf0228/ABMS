@@ -4,7 +4,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
-type ViewName = 'register' | 'search' | 'employmentRates' | 'socialPremiums' | 'salaryConditions' | 'salaryDetailPreview' | 'payrollSearch' | 'payrollDetail' | 'contractList' | 'attendanceSearch' | 'attendanceBulk' | 'salesList' | 'salesAnalysis' | 'profitAnalysis' | 'customerList' | 'employeeList';
+type ViewName = 'register' | 'search' | 'employmentRates' | 'socialPremiums' | 'salaryConditions' | 'salaryDetailPreview' | 'payrollSearch' | 'payrollDetail' | 'shareholderSalaryList' | 'contractList' | 'attendanceSearch' | 'attendanceBulk' | 'salesList' | 'salesAnalysis' | 'profitAnalysis' | 'fiscalProfitConfirmation' | 'allowanceManagement' | 'customerList' | 'employeeList' | 'offBookExpenseList';
 
 interface BillingRequest {
   no?: number;
@@ -185,6 +185,8 @@ interface ContractSearchForm {
   operationStatus: string;
   contractStartDateFrom: string;
   contractEndDateTo: string;
+  effectiveMonthFrom: string;
+  effectiveMonthTo: string;
   customerId: string;
   engineerCompanyId: string;
   projectAffiliation: string;
@@ -234,6 +236,24 @@ interface AttendanceBulkRow {
   remarks: string;
 }
 
+interface OffBookExpense {
+  expenseNo: number;
+  receivedDate: string;
+  handlerEmployeeNo: string;
+  handlerName: string;
+  amount: number | null;
+  currency: string;
+  reason: string;
+}
+
+interface OffBookExpenseForm {
+  receivedDate: string;
+  handlerEmployeeNo: string;
+  amount: number | null;
+  currency: string;
+  reason: string;
+}
+
 interface SalesSearchForm {
   startMonth: string;
   endMonth: string;
@@ -276,6 +296,80 @@ interface ProfitAnalysisItem {
   postingMonth: string;
   workingPersonCount: number | null;
   profitAmount: number | null;
+}
+
+interface FiscalProfitAnalysisRow {
+  itemName: string;
+  monthlyAmounts: number[];
+  totalAmount: number | null;
+}
+
+interface ProjectAffiliationProfitRow {
+  employeeNo: string;
+  projectAffiliation: string;
+  profitAmount: number | null;
+  percentage: number | null;
+}
+
+interface FiscalProfitAnalysisResponse {
+  fiscalStartMonth: string;
+  fiscalEndMonth: string;
+  months: string[];
+  rows: FiscalProfitAnalysisRow[];
+  companyProfitTotal: number | null;
+  projectAffiliationProfits: ProjectAffiliationProfitRow[];
+}
+
+interface AllowanceAnalysisRow {
+  employeeNo: string;
+  employeeName: string;
+  allowanceName: string;
+  monthlyAmounts: { month: string | null; amount: number | null }[];
+  subtotal: number | null;
+  total: number | null;
+}
+
+interface AllowanceDisplayRow extends AllowanceAnalysisRow {
+  isRecruitment: boolean;
+  isEmployeeGroupStart: boolean;
+  employeeTotal: number;
+}
+
+interface AllowanceAnalysisResponse {
+  fiscalStartMonth: string;
+  fiscalEndMonth: string;
+  months: string[];
+  rows: AllowanceAnalysisRow[];
+  recruitmentAmounts?: Record<string, Record<string, number>>;
+}
+
+interface AllowanceAnalysisDetail {
+  month: string;
+  contractNo: number;
+  engineerName: string;
+  contractAmount: number | null;
+  engineerUnitPrice: number | null;
+  allowanceAmount: number | null;
+}
+
+interface ShareholderSalaryRow {
+  paymentMonth: string;
+  contractAmount: number | null;
+  overtimeAmount: number | null;
+  baseSalary: number | null;
+  advanceExpense2: number | null;
+  companyTotalAmount: number | null;
+  overUnder: number | null;
+  companyTotalManual: boolean;
+}
+
+interface ShareholderSalaryResponse {
+  employeeNo: string;
+  employeeName: string;
+  fiscalStartMonth: string;
+  fiscalEndMonth: string;
+  rows: ShareholderSalaryRow[];
+  totalOverUnder: number | null;
 }
 
 interface SalesDetailItem {
@@ -321,6 +415,8 @@ export class AppComponent implements OnInit {
   private readonly salesApiUrl = 'http://localhost:9000/api/sales';
   private readonly employeesApiUrl = 'http://localhost:9000/api/employees';
   private readonly attendanceApiUrl = 'http://localhost:9000/api/attendance';
+  private readonly offBookExpensesApiUrl = 'http://localhost:9000/api/off-book-expenses';
+  private readonly shareholderSalariesApiUrl = 'http://localhost:9000/api/payroll/shareholder-salaries';
 
   activeView: ViewName = 'contractList';
   registerMessage = '';
@@ -374,6 +470,34 @@ export class AppComponent implements OnInit {
   salesMonthlyAnalysisResults: SalesMonthlyAnalysisItem[] = [];
   profitAnalysisMessage = '';
   profitAnalysisResults: ProfitAnalysisItem[] = [];
+  fiscalProfitMessage = '';
+  fiscalProfitStartMonth = '';
+  fiscalProfitEndMonth = '';
+  fiscalProfitMonths: string[] = [];
+  fiscalProfitRows: FiscalProfitAnalysisRow[] = [];
+  fiscalProfitCompanyTotal = 0;
+  projectAffiliationProfitRows: ProjectAffiliationProfitRow[] = [];
+  projectAffiliationProfitTotal = 0;
+  allowanceAnalysisMessage = '';
+  allowanceAnalysisMonths: string[] = [];
+  allowanceAnalysisResults: AllowanceAnalysisRow[] = [];
+  allowanceAnalysisDisplayResults: AllowanceDisplayRow[] = [];
+  allowanceAnalysisDetails: AllowanceAnalysisDetail[] = [];
+  allowanceAnalysisDetailTitle = '';
+  shareholderSalaryEmployeeNo = '0010';
+  shareholderSalaryEmployeeName = '';
+  shareholderSalaryFiscalStartMonth = '';
+  shareholderSalaryFiscalEndMonth = '';
+  shareholderSalaryRows: ShareholderSalaryRow[] = [];
+  shareholderSalaryTotal = 0;
+  shareholderSalaryMessage = '';
+  readonly shareholderSalaryEmployees = [
+    { employeeNo: '0010', employeeName: '毛 杰' },
+    { employeeNo: '0001', employeeName: '王 超' },
+    { employeeNo: '0002', employeeName: '小林 和成' },
+    { employeeNo: '0006', employeeName: '孫 偉東' },
+    { employeeNo: '0011', employeeName: '李 鴻民' }
+  ];
   employeeMessage = '';
   employees: EmployeeMaster[] = [];
   includeBpEmployees = false;
@@ -385,6 +509,15 @@ export class AppComponent implements OnInit {
   attendanceMessage = '';
   attendanceResults: AttendanceItem[] = [];
   attendanceRegisterRows: AttendanceBulkRow[] = [];
+  offBookExpenseMessage = '';
+  offBookExpenses: OffBookExpense[] = [];
+  editingOffBookExpense: (OffBookExpenseForm & { expenseNo: number }) | null = null;
+  offBookExpenseCreateMode = false;
+  offBookExpenseSearchForm = {
+    receivedDateFrom: '',
+    receivedDateTo: '',
+    handlerEmployeeNo: ''
+  };
 
   registerForm: BillingRequest = this.createEmptyForm();
   searchForm: BillingRequest = this.createEmptyForm();
@@ -398,6 +531,8 @@ export class AppComponent implements OnInit {
     operationStatus: '',
     contractStartDateFrom: '',
     contractEndDateTo: '',
+    effectiveMonthFrom: '',
+    effectiveMonthTo: '',
     customerId: '',
     engineerCompanyId: '',
     projectAffiliation: '',
@@ -441,7 +576,12 @@ export class AppComponent implements OnInit {
     this.salesMessage = '';
     this.salesAnalysisMessage = '';
     this.profitAnalysisMessage = '';
+    this.fiscalProfitMessage = '';
+    this.allowanceAnalysisMessage = '';
+    this.shareholderSalaryMessage = '';
+    this.allowanceAnalysisDetails = [];
     this.employeeMessage = '';
+    this.offBookExpenseMessage = '';
     this.attendanceMessage = '';
     this.editingSalaryDetail = null;
     this.editingContract = null;
@@ -455,6 +595,9 @@ export class AppComponent implements OnInit {
     }
     if (view === 'salaryConditions') {
       this.loadSalaryConditions();
+    }
+    if (view === 'shareholderSalaryList') {
+      this.loadShareholderSalaries();
     }
     if (view === 'contractList') {
       this.loadCustomerOptions();
@@ -471,11 +614,21 @@ export class AppComponent implements OnInit {
     if (view === 'salesAnalysis') {
       this.loadCustomerOptions();
     }
+    if (view === 'fiscalProfitConfirmation') {
+      this.loadFiscalProfitAnalysis();
+    }
+    if (view === 'allowanceManagement') {
+      this.searchAllowanceAnalysis();
+    }
     if (view === 'employeeList') {
       this.loadEmployees();
     }
     if (view === 'customerList') {
       this.loadCustomerList();
+    }
+    if (view === 'offBookExpenseList') {
+      this.loadEmployees();
+      this.loadOffBookExpenses();
     }
     if (view === 'attendanceSearch' || view === 'attendanceBulk') {
       this.attendanceResults = [];
@@ -492,16 +645,19 @@ export class AppComponent implements OnInit {
       || this.activeView === 'search'
       || this.activeView === 'register'
       || this.activeView === 'salesAnalysis'
-      || this.activeView === 'profitAnalysis';
+      || this.activeView === 'profitAnalysis'
+      || this.activeView === 'fiscalProfitConfirmation'
+      || this.activeView === 'allowanceManagement';
   }
 
   isPayrollMenuActive(): boolean {
-    return this.activeView === 'salaryConditions' || this.activeView === 'salaryDetailPreview' || this.activeView === 'payrollSearch' || this.activeView === 'payrollDetail';
+    return this.activeView === 'salaryConditions' || this.activeView === 'salaryDetailPreview' || this.activeView === 'payrollSearch' || this.activeView === 'payrollDetail' || this.activeView === 'shareholderSalaryList';
   }
 
   isCommonMenuActive(): boolean {
     return this.activeView === 'customerList'
       || this.activeView === 'employeeList'
+      || this.activeView === 'offBookExpenseList'
       || this.activeView === 'employmentRates'
       || this.activeView === 'socialPremiums';
   }
@@ -611,6 +767,103 @@ export class AppComponent implements OnInit {
     return compact.length === 6 ? `${compact.slice(0, 4)}年${compact.slice(4, 6)}月` : value;
   }
 
+  loadOffBookExpenses(): void {
+    this.offBookExpenseMessage = '';
+    let params = new HttpParams();
+    const search = this.offBookExpenseSearchForm;
+    if (search.receivedDateFrom) {
+      params = params.set('receivedDateFrom', search.receivedDateFrom);
+    }
+    if (search.receivedDateTo) {
+      params = params.set('receivedDateTo', search.receivedDateTo);
+    }
+    if (search.handlerEmployeeNo) {
+      params = params.set('handlerEmployeeNo', search.handlerEmployeeNo);
+    }
+    this.http.get<OffBookExpense[]>(this.offBookExpensesApiUrl, { params }).subscribe({
+      next: (expenses) => {
+        this.offBookExpenses = expenses;
+        this.offBookExpenseMessage = `${expenses.length}件見つかりました。`;
+      },
+      error: () => {
+        this.offBookExpenses = [];
+        this.offBookExpenseMessage = '勘定外費用の検索に失敗しました。';
+      }
+    });
+  }
+
+  clearOffBookExpenseSearch(): void {
+    this.offBookExpenseSearchForm = {
+      receivedDateFrom: '',
+      receivedDateTo: '',
+      handlerEmployeeNo: ''
+    };
+    this.loadOffBookExpenses();
+  }
+
+  openOffBookExpenseCreate(): void {
+    this.offBookExpenseMessage = '';
+    this.offBookExpenseCreateMode = true;
+    this.editingOffBookExpense = {
+      expenseNo: 0,
+      receivedDate: this.currentDateInput(),
+      handlerEmployeeNo: '',
+      amount: 0,
+      currency: '日本円',
+      reason: ''
+    };
+  }
+
+  openOffBookExpenseEdit(expense: OffBookExpense): void {
+    this.offBookExpenseMessage = '';
+    this.offBookExpenseCreateMode = false;
+    this.editingOffBookExpense = {
+      expenseNo: expense.expenseNo,
+      receivedDate: expense.receivedDate,
+      handlerEmployeeNo: expense.handlerEmployeeNo,
+      amount: expense.amount,
+      currency: expense.currency,
+      reason: expense.reason
+    };
+  }
+
+  closeOffBookExpenseEdit(): void {
+    this.editingOffBookExpense = null;
+    this.offBookExpenseCreateMode = false;
+  }
+
+  saveOffBookExpense(): void {
+    if (!this.editingOffBookExpense) {
+      return;
+    }
+    const form = this.editingOffBookExpense;
+    const requestBody = {
+      receivedDate: form.receivedDate,
+      handlerEmployeeNo: form.handlerEmployeeNo,
+      amount: form.amount,
+      currency: form.currency,
+      reason: form.reason
+    };
+    const creating = this.offBookExpenseCreateMode;
+    const request = this.offBookExpenseCreateMode
+      ? this.http.post<OffBookExpense>(this.offBookExpensesApiUrl, requestBody)
+      : this.http.put<OffBookExpense>(`${this.offBookExpensesApiUrl}/${form.expenseNo}`, requestBody);
+    request.subscribe({
+      next: () => {
+        this.closeOffBookExpenseEdit();
+        this.loadOffBookExpenses();
+        this.offBookExpenseMessage = creating
+          ? '勘定外費用を登録しました。'
+          : '勘定外費用を訂正しました。';
+      },
+      error: () => {
+        this.offBookExpenseMessage = creating
+          ? '勘定外費用の登録に失敗しました。'
+          : '勘定外費用の訂正に失敗しました。';
+      }
+    });
+  }
+
   loadCustomerOptions(): void {
     if (this.customerOptions.length > 0) {
       return;
@@ -717,6 +970,8 @@ export class AppComponent implements OnInit {
       operationStatus: '',
       contractStartDateFrom: '',
       contractEndDateTo: '',
+      effectiveMonthFrom: '',
+      effectiveMonthTo: '',
       customerId: '',
       engineerCompanyId: '',
       projectAffiliation: '',
@@ -1160,6 +1415,236 @@ export class AppComponent implements OnInit {
     });
   }
 
+  loadFiscalProfitAnalysis(): void {
+    this.fiscalProfitMessage = '';
+    this.http.get<FiscalProfitAnalysisResponse>(`${this.salesApiUrl}/fiscal-profit`).subscribe({
+      next: (response) => {
+        this.fiscalProfitStartMonth = response.fiscalStartMonth;
+        this.fiscalProfitEndMonth = response.fiscalEndMonth;
+        this.fiscalProfitMonths = response.months;
+        this.fiscalProfitRows = response.rows;
+        this.fiscalProfitCompanyTotal = this.amount(response.companyProfitTotal);
+        this.projectAffiliationProfitRows = response.projectAffiliationProfits ?? [];
+        this.projectAffiliationProfitTotal = this.projectAffiliationProfitRows.reduce(
+          (sum, row) => sum + this.amount(row.profitAmount),
+          0
+        );
+        this.fiscalProfitMessage = `${response.months.length}か月の利益を集計しました。`;
+      },
+      error: () => {
+        this.fiscalProfitStartMonth = '';
+        this.fiscalProfitEndMonth = '';
+        this.fiscalProfitMonths = [];
+        this.fiscalProfitRows = [];
+        this.fiscalProfitCompanyTotal = 0;
+        this.projectAffiliationProfitRows = [];
+        this.projectAffiliationProfitTotal = 0;
+        this.fiscalProfitMessage = '決算期利益の取得に失敗しました。';
+      }
+    });
+  }
+
+  searchAllowanceAnalysis(): void {
+    this.allowanceAnalysisMessage = '';
+    this.http.get<AllowanceAnalysisResponse>(`${this.salesApiUrl}/allowance-analysis`).subscribe({
+      next: (response) => {
+        this.allowanceAnalysisMonths = response.months;
+        this.allowanceAnalysisResults = response.rows;
+        this.recruitmentAllowanceAmounts.clear();
+        Object.entries(response.recruitmentAmounts ?? {}).forEach(([employeeNo, amounts]) => {
+          Object.entries(amounts).forEach(([month, amount]) => {
+            this.recruitmentAllowanceAmounts.set(`${employeeNo}\u0000${month}`, this.amount(amount));
+          });
+        });
+        this.rebuildAllowanceDisplayRows();
+        this.allowanceAnalysisMessage = `${response.rows.length}名の担当者を集計しました。`;
+      },
+      error: () => {
+        this.allowanceAnalysisMessage = '手当管理の集計に失敗しました。';
+      }
+    });
+  }
+
+  saveAllowanceRecruitment(): void {
+    this.allowanceAnalysisMessage = '';
+    const rows = this.allowanceAnalysisResults.map((row) => ({
+      employeeNo: row.employeeNo,
+      amounts: this.allowanceAnalysisMonths.map((month) => ({
+        paymentMonth: month,
+        amount: this.recruitmentAllowanceAmounts.get(`${row.employeeNo}\u0000${month}`) ?? 0
+      }))
+    }));
+    this.http.put(`${this.salesApiUrl}/allowance-analysis/recruitment`, { rows }).subscribe({
+      next: () => {
+        this.allowanceAnalysisMessage = '募集手当を登録しました。';
+      },
+      error: () => {
+        this.allowanceAnalysisMessage = '募集手当の登録に失敗しました。';
+      }
+    });
+  }
+
+  rebuildAllowanceDisplayRows(): void {
+    this.allowanceAnalysisDisplayResults = this.allowanceAnalysisResults.flatMap((row, rowIndex) => {
+      const recruitmentMonthlyAmounts = row.monthlyAmounts.map((amount, index) => ({
+        month: amount.month,
+        amount: this.recruitmentAllowanceAmount(row.employeeNo, index)
+      }));
+      const salesTotal = row.monthlyAmounts.reduce((total, amount) => total + this.amount(amount.amount), 0);
+      const recruitmentTotal = recruitmentMonthlyAmounts.reduce((total, amount) => total + this.amount(amount.amount), 0);
+      const employeeTotal = salesTotal + recruitmentTotal;
+      return [
+        { ...row, isRecruitment: false, isEmployeeGroupStart: rowIndex > 0, employeeTotal },
+        {
+          ...row,
+          allowanceName: '募集手当',
+          monthlyAmounts: recruitmentMonthlyAmounts,
+          subtotal: recruitmentTotal,
+          total: employeeTotal,
+          isRecruitment: true,
+          isEmployeeGroupStart: false,
+          employeeTotal
+        }
+      ];
+    });
+  }
+
+  setRecruitmentAllowanceAmount(row: AllowanceDisplayRow, index: number, value: string | number): void {
+    const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim());
+    const amount = Number.isFinite(parsed) ? parsed : 0;
+    const month = this.allowanceAnalysisMonths[index];
+    if (!month) {
+      return;
+    }
+    this.recruitmentAllowanceAmounts.set(`${row.employeeNo}\u0000${month}`, amount);
+    row.monthlyAmounts[index].amount = amount;
+    const total = row.monthlyAmounts.reduce((sum, item) => sum + this.amount(item.amount), 0);
+    row.subtotal = total;
+    const salesRow = this.allowanceAnalysisDisplayResults.find(
+      (item) => item.employeeNo === row.employeeNo && !item.isRecruitment
+    );
+    const employeeTotal = this.amount(salesRow?.subtotal) + total;
+    this.allowanceAnalysisDisplayResults
+      .filter((item) => item.employeeNo === row.employeeNo)
+      .forEach((item) => item.employeeTotal = employeeTotal);
+    row.total = employeeTotal;
+  }
+
+  formatAllowanceAmount(value: number | null): string {
+    return new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 }).format(this.amount(value));
+  }
+
+  private recruitmentAllowanceAmounts = new Map<string, number>();
+
+  private recruitmentAllowanceAmount(employeeNo: string, monthIndex: number): number {
+    const month = this.allowanceAnalysisMonths[monthIndex];
+    return month === undefined ? 0 : this.recruitmentAllowanceAmounts.get(`${employeeNo}\u0000${month}`) ?? 0;
+  }
+
+  openAllowanceAnalysisDetails(row: AllowanceAnalysisRow, index: number): void {
+    const month = this.allowanceAnalysisMonths[index];
+    if (!month) {
+      return;
+    }
+    this.http.get<AllowanceAnalysisDetail[]>(`${this.salesApiUrl}/allowance-analysis/details`, {
+      params: new HttpParams()
+        .set('employeeNo', row.employeeNo)
+        .set('month', month)
+    }).subscribe({
+      next: (details) => {
+        this.allowanceAnalysisDetails = details;
+        this.allowanceAnalysisDetailTitle = `${month.replace('-', '/')} ${row.employeeName || row.employeeNo} 営業手当明細`;
+      },
+      error: () => {
+        this.allowanceAnalysisMessage = '手当計算明細の取得に失敗しました。';
+      }
+    });
+  }
+
+  closeAllowanceAnalysisDetails(): void {
+    this.allowanceAnalysisDetails = [];
+    this.allowanceAnalysisDetailTitle = '';
+  }
+
+  loadShareholderSalaries(): void {
+    this.shareholderSalaryMessage = '';
+    this.http.get<ShareholderSalaryResponse>(this.shareholderSalariesApiUrl, {
+      params: new HttpParams().set('employeeNo', this.shareholderSalaryEmployeeNo)
+    }).subscribe({
+      next: (response) => {
+        this.shareholderSalaryEmployeeNo = response.employeeNo;
+        this.shareholderSalaryEmployeeName = response.employeeName;
+        this.shareholderSalaryFiscalStartMonth = response.fiscalStartMonth;
+        this.shareholderSalaryFiscalEndMonth = response.fiscalEndMonth;
+        this.shareholderSalaryRows = response.rows;
+        this.shareholderSalaryTotal = this.amount(response.totalOverUnder);
+      },
+      error: () => {
+        this.shareholderSalaryRows = [];
+        this.shareholderSalaryTotal = 0;
+        this.shareholderSalaryMessage = '株主給与の取得に失敗しました。';
+      }
+    });
+  }
+
+  changeShareholderSalaryEmployee(): void {
+    this.loadShareholderSalaries();
+  }
+
+  formatShareholderAmount(value: number | null): string {
+    return new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 2 }).format(this.amount(value));
+  }
+
+  setShareholderAmount(
+    row: ShareholderSalaryRow,
+    field: 'contractAmount' | 'overtimeAmount' | 'baseSalary' | 'advanceExpense2' | 'companyTotalAmount',
+    value: string
+  ): void {
+    const normalized = value.replace(/,/g, '').trim();
+    const parsed = normalized === '' || normalized === '-' ? 0 : Number(normalized);
+    row[field] = Number.isFinite(parsed) ? parsed : 0;
+    if (field === 'companyTotalAmount') {
+      row.companyTotalManual = true;
+    }
+    this.recalculateShareholderSalaryRow(row);
+  }
+
+  recalculateShareholderSalaryRow(row: ShareholderSalaryRow): void {
+    row.overUnder = this.amount(row.contractAmount)
+      + this.amount(row.overtimeAmount)
+      - this.amount(row.baseSalary)
+      - this.amount(row.advanceExpense2)
+      - this.amount(row.companyTotalAmount);
+    this.shareholderSalaryTotal = this.shareholderSalaryRows
+      .reduce((total, item) => total + this.amount(item.overUnder), 0);
+  }
+
+  saveShareholderSalaries(): void {
+    this.shareholderSalaryMessage = '';
+    this.http.put<ShareholderSalaryResponse>(this.shareholderSalariesApiUrl, {
+      employeeNo: this.shareholderSalaryEmployeeNo,
+      rows: this.shareholderSalaryRows.map((row) => ({
+        paymentMonth: row.paymentMonth,
+        contractAmount: this.amount(row.contractAmount),
+        overtimeAmount: this.amount(row.overtimeAmount),
+        baseSalary: this.amount(row.baseSalary),
+        advanceExpense2: this.amount(row.advanceExpense2),
+        companyTotalAmount: this.amount(row.companyTotalAmount),
+        companyTotalManual: row.companyTotalManual
+      }))
+    }).subscribe({
+      next: (response) => {
+        this.shareholderSalaryEmployeeName = response.employeeName;
+        this.shareholderSalaryRows = response.rows;
+        this.shareholderSalaryTotal = this.amount(response.totalOverUnder);
+        this.shareholderSalaryMessage = '株主給与を登録しました。';
+      },
+      error: () => {
+        this.shareholderSalaryMessage = '株主給与の登録に失敗しました。';
+      }
+    });
+  }
+
   profitAnalysisTotalAmount(): number {
     return this.profitAnalysisResults.reduce((total, row) => total + this.amount(row.profitAmount), 0);
   }
@@ -1286,6 +1771,10 @@ export class AppComponent implements OnInit {
   employeeDisplayName(employee: EmployeeMaster): string {
     const splitName = `${employee.lastName ?? ''} ${employee.firstName ?? ''}`.trim();
     return splitName || employee.employeeName || '';
+  }
+
+  get regularEmployees(): EmployeeMaster[] {
+    return this.employees.filter((employee) => employee.employeeType === '0');
   }
 
   get employeeListRows(): EmployeeMaster[] {
@@ -1842,6 +2331,11 @@ export class AppComponent implements OnInit {
   private currentMonthInput(): string {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private currentDateInput(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
   private createMonthOptions(): string[] {

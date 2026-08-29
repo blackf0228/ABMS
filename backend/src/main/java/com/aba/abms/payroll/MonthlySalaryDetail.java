@@ -35,6 +35,9 @@ public class MonthlySalaryDetail {
   @Column(name = "child_support_amount", precision = 15, scale = 2)
   private BigDecimal childSupportAmount;
 
+  @Column(name = "company_child_support_amount", precision = 15, scale = 2)
+  private BigDecimal companyChildSupportAmount;
+
   @Column(name = "taxable_income", precision = 15, scale = 2)
   private BigDecimal taxableIncome;
 
@@ -95,6 +98,14 @@ public class MonthlySalaryDetail {
 
   public void setChildSupportAmount(BigDecimal childSupportAmount) {
     this.childSupportAmount = childSupportAmount;
+  }
+
+  public BigDecimal getCompanyChildSupportAmount() {
+    return companyChildSupportAmount;
+  }
+
+  public void setCompanyChildSupportAmount(BigDecimal companyChildSupportAmount) {
+    this.companyChildSupportAmount = companyChildSupportAmount;
   }
 
   public BigDecimal getTaxableIncome() {
