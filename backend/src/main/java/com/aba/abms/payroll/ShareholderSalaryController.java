@@ -72,7 +72,7 @@ public class ShareholderSalaryController {
     Map<String, Object> employee = jdbcTemplate.queryForMap("""
         select coalesce(nullif(trim(concat_ws(' ', last_name, first_name)), ''), employee_name, employee_no) as employee_name,
                coalesce(base_salary, 0) as base_salary
-        from employee_masters
+        from current_employee_masters
         where employee_no = :employeeNo
         """, Map.of("employeeNo", employeeNo.trim()));
 
@@ -99,14 +99,22 @@ public class ShareholderSalaryController {
     });
 
     List<ShareholderSalaryRow> rows = new ArrayList<>();
-    BigDecimal employeeBaseSalary = amount((BigDecimal) employee.get("base_salary"));
+    Map<String, BigDecimal> effectiveBaseSalaries = new HashMap<>();
+    jdbcTemplate.query("""
+        select to_char(m, 'YYYY-MM') as payment_month, e.base_salary
+        from generate_series(cast(:startDate as date), cast(:endDate as date), interval '1 month') m
+        join lateral employee_masters_for_month(to_char(m, 'YYYYMM')) e on e.employee_no = :employeeNo
+        """, Map.of("startDate", fiscalStart.atDay(1), "endDate", fiscalEnd.atDay(1),
+            "employeeNo", employeeNo.trim()), rs -> {
+      effectiveBaseSalaries.put(rs.getString("payment_month"), amount(rs.getBigDecimal("base_salary")));
+    });
     for (YearMonth month = fiscalStart; !month.isAfter(fiscalEnd); month = month.plusMonths(1)) {
       String paymentMonth = month.toString();
       Map<String, BigDecimal> savedValues = saved.get(paymentMonth);
       Map<String, BigDecimal> payrollValues = payroll.getOrDefault(paymentMonth, Map.of());
       BigDecimal contractAmount = value(savedValues, "contractAmount", BigDecimal.ZERO);
       BigDecimal overtimeAmount = value(savedValues, "overtimeAmount", BigDecimal.ZERO);
-      BigDecimal baseSalary = value(savedValues, "baseSalary", employeeBaseSalary);
+      BigDecimal baseSalary = value(savedValues, "baseSalary", effectiveBaseSalaries.getOrDefault(paymentMonth, BigDecimal.ZERO));
       BigDecimal advanceExpense2 = value(savedValues, "advanceExpense2", value(payrollValues, "advanceExpense2", BigDecimal.ZERO));
       boolean companyTotalManual = manualCompanyMonths.contains(paymentMonth);
       BigDecimal companyTotalAmount = companyTotalManual

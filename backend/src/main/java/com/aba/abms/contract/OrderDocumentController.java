@@ -111,7 +111,7 @@ public class OrderDocumentController {
           customer.company_id as customer_id,
           engineer_company.company_id as engineer_company_id
         from contracts c
-        left join employee_masters engineer
+        left join employee_masters_for_period(:monthStart, :monthEnd) engineer
           on engineer.employee_no = c.engineer_name
         left join customer_masters customer
           on trim(customer.company_name) = trim(c.customer_name)
@@ -119,7 +119,7 @@ public class OrderDocumentController {
           on trim(engineer_company.company_name) = trim(c.engineer_company_name)
         where c.contract_no = :contractNo
         """,
-        Map.of("contractNo", contractNo),
+        Map.of("contractNo", contractNo, "monthStart", currentMonth.atDay(1), "monthEnd", currentMonth.atEndOfMonth()),
         new OrderDocumentDataMapper());
 
     if (data.engineerCompanyId() == null || data.engineerCompanyId().isBlank()) {
@@ -161,7 +161,7 @@ public class OrderDocumentController {
       SettlementValues settlement) {
     YearMonth nextMonth = currentMonth;
     Map<String, String> values = new HashMap<>();
-    values.put("【発行年月日】", currentMonth.atEndOfMonth().format(DATE_FORMAT));
+    values.put("【発行年月日】", OrderDocumentPolicy.issueDate(currentMonth).format(DATE_FORMAT));
     values.put("【技術者所属会社名】", value(data.engineerCompanyName()));
     values.put("【注文番号】", "CMC" + nextMonth.format(ORDER_MONTH_FORMAT) + "-T" + data.engineerCompanyId() + "001");
     values.put("【作業開始日】", nextMonth.atDay(1).format(DATE_FORMAT));

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { catchError, forkJoin, map, of } from 'rxjs';
@@ -183,8 +183,6 @@ interface CustomerOption {
 interface ContractSearchForm {
   engineerName: string;
   operationStatus: string;
-  contractStartDateFrom: string;
-  contractEndDateTo: string;
   effectiveMonthFrom: string;
   effectiveMonthTo: string;
   customerId: string;
@@ -295,6 +293,9 @@ interface SalesMonthlyAnalysisItem {
 interface ProfitAnalysisItem {
   postingMonth: string;
   workingPersonCount: number | null;
+  salesAmount: number | null;
+  bpPaymentAmount: number | null;
+  salaryPaymentAmount: number | null;
   profitAmount: number | null;
 }
 
@@ -375,6 +376,7 @@ interface ShareholderSalaryResponse {
 interface SalesDetailItem {
   engineerName: string;
   billingAmount: number | null;
+  itemType: string;
 }
 
 interface SalesDetailResponse {
@@ -395,6 +397,8 @@ interface EmployeeMaster {
   deductionCount: number | null;
   consumptionTaxRate: number | null;
   deletionFlag: string;
+  effectiveStartDate: string;
+  effectiveEndDate: string;
 }
 
 @Component({
@@ -503,6 +507,9 @@ export class AppComponent implements OnInit {
   includeBpEmployees = false;
   editingEmployee: EmployeeMaster | null = null;
   employeeCreateMode = false;
+  employeeHistory: EmployeeMaster[] = [];
+  employeeHistoryMessage = '';
+  employeeSaveMessage = '';
   customerMessage = '';
   editingCustomer: CustomerOption | null = null;
   customerCreateMode = false;
@@ -529,8 +536,6 @@ export class AppComponent implements OnInit {
   contractSearchForm: ContractSearchForm = {
     engineerName: '',
     operationStatus: '',
-    contractStartDateFrom: '',
-    contractEndDateTo: '',
     effectiveMonthFrom: '',
     effectiveMonthTo: '',
     customerId: '',
@@ -968,8 +973,6 @@ export class AppComponent implements OnInit {
     this.contractSearchForm = {
       engineerName: '',
       operationStatus: '',
-      contractStartDateFrom: '',
-      contractEndDateTo: '',
       effectiveMonthFrom: '',
       effectiveMonthTo: '',
       customerId: '',
@@ -1064,10 +1067,24 @@ export class AppComponent implements OnInit {
         this.contractModalMode = null;
         this.contractMessage = mode === 'create' ? '契約情報を登録しました。' : '契約情報を訂正しました。';
       },
-      error: () => {
-        this.contractMessage = mode === 'create' ? '契約情報の登録に失敗しました。' : '契約情報の訂正に失敗しました。';
+      error: (error: HttpErrorResponse) => {
+        const message = mode === 'create' ? '契約情報の登録に失敗しました。' : '契約情報の訂正に失敗しました。';
+        this.contractMessage = `${message}（HTTP ${error.status}${this.contractErrorDetail(error)}）`;
       }
     });
+  }
+
+  private contractErrorDetail(error: HttpErrorResponse): string {
+    const body: unknown = error.error;
+    let detail = '';
+    if (typeof body === 'string') {
+      detail = body.trim();
+    } else if (body && typeof body === 'object') {
+      const response = body as Record<string, unknown>;
+      const candidate = response['detail'] ?? response['message'] ?? response['error'];
+      detail = typeof candidate === 'string' ? candidate.trim() : JSON.stringify(body);
+    }
+    return detail ? `: ${detail}` : error.message ? `: ${error.message}` : '';
   }
 
   isContractCreateMode(): boolean {
@@ -1409,8 +1426,11 @@ export class AppComponent implements OnInit {
         this.profitAnalysisResults = results;
         this.profitAnalysisMessage = `${results.length}\u30f6\u6708\u898b\u3064\u304b\u308a\u307e\u3057\u305f\u3002`;
       },
-      error: () => {
-        this.profitAnalysisMessage = '\u5229\u76ca\u89e3\u6790\u306e\u691c\u7d22\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
+      error: (error) => {
+        this.profitAnalysisResults = [];
+        this.profitAnalysisMessage = typeof error.error?.message === 'string'
+          ? error.error.message
+          : '\u5229\u76ca\u89e3\u6790\u306e\u691c\u7d22\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
       }
     });
   }
@@ -1649,6 +1669,10 @@ export class AppComponent implements OnInit {
     return this.profitAnalysisResults.reduce((total, row) => total + this.amount(row.profitAmount), 0);
   }
 
+  profitAnalysisComponentTotal(field: 'salesAmount' | 'bpPaymentAmount' | 'salaryPaymentAmount' | 'workingPersonCount'): number {
+    return this.profitAnalysisResults.reduce((total, row) => total + this.amount(row[field]), 0);
+  }
+
   profitAnalysisMaxPersonCount(): number {
     return Math.max(1, ...this.profitAnalysisResults.map((row) => this.amount(row.workingPersonCount)));
   }
@@ -1731,17 +1755,31 @@ export class AppComponent implements OnInit {
   }
 
   openEmployeeEdit(employee: EmployeeMaster): void {
+    this.employeeHistory = [];
+    this.employeeHistoryMessage = '変更履歴を取得中です。';
+    this.employeeSaveMessage = '';
     this.employeeMessage = '';
     this.employeeCreateMode = false;
     const legacyNameParts = (employee.employeeName ?? '').replace(/　/g, ' ').trim().split(/\s+/);
     this.editingEmployee = {
       ...employee,
+      effectiveStartDate: this.currentDateInput(),
       lastName: employee.lastName || legacyNameParts[0] || '',
       firstName: employee.firstName || legacyNameParts.slice(1).join(' ') || ''
     };
+    this.http.get<EmployeeMaster[]>(`${this.employeesApiUrl}/${employee.employeeNo}/history`).subscribe({
+      next: (history) => {
+        if (this.editingEmployee?.employeeNo !== employee.employeeNo || this.employeeCreateMode) return;
+        this.employeeHistory = history;
+        this.employeeHistoryMessage = history.length ? '' : '変更履歴がありません。';
+      },
+      error: () => { this.employeeHistoryMessage = '変更履歴の取得に失敗しました。'; }
+    });
   }
 
   openEmployeeCreate(): void {
+    this.employeeHistory = [];
+    this.employeeSaveMessage = '';
     this.employeeMessage = '';
     this.employeeCreateMode = true;
     this.editingEmployee = {
@@ -1754,18 +1792,28 @@ export class AppComponent implements OnInit {
       dependentCount: 0,
       deductionCount: 0,
       consumptionTaxRate: 0,
-      deletionFlag: '0'
+      deletionFlag: '0',
+      effectiveStartDate: this.currentDateInput(),
+      effectiveEndDate: '9999-12-31'
     };
-    this.http.get<string>(`${this.employeesApiUrl}/next-number`).subscribe({
-      next: (employeeNo) => {
-        if (this.employeeCreateMode && this.editingEmployee) {
-          this.editingEmployee.employeeNo = employeeNo;
-        }
-      },
-      error: () => {
-        this.employeeMessage = '\u6b21\u306e\u793e\u54e1\u756a\u53f7\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u305f\u305f\u3081\u3001\u4e00\u89a7\u306e\u793e\u54e1\u756a\u53f7\u304b\u3089\u4eee\u756a\u53f7\u3092\u8868\u793a\u3057\u307e\u3057\u305f\u3002';
+    this.refreshEmployeeNumber('0');
+  }
+
+  onEmployeeTypeChange(employeeType: string): void {
+    if (!this.editingEmployee) {
+      return;
+    }
+    if (employeeType === '2') {
+      this.editingEmployee.dependentCount = 0;
+      this.editingEmployee.deductionCount = 0;
+      this.editingEmployee.consumptionTaxRate = 0;
+      if (this.employeeCreateMode) {
+        this.editingEmployee.employeeNo = this.nextEmployeeNumberFromLoadedList('2');
       }
-    });
+    }
+    if (this.employeeCreateMode) {
+      this.refreshEmployeeNumber(employeeType);
+    }
   }
 
   employeeDisplayName(employee: EmployeeMaster): string {
@@ -1783,7 +1831,17 @@ export class AppComponent implements OnInit {
       : this.employees.filter((employee) => employee.employeeType !== '2');
   }
 
-  private nextEmployeeNumberFromLoadedList(): string {
+  private nextEmployeeNumberFromLoadedList(employeeType = '0'): string {
+    if (employeeType === '2') {
+      const maxBpNo = this.employees
+        .filter((employee) => employee.employeeType === '2')
+        .map((employee) => /^B(\d+)$/.exec(employee.employeeNo)?.[1])
+        .filter((sequence): sequence is string => sequence !== undefined)
+        .map(Number)
+        .filter(Number.isFinite)
+        .reduce((max, sequence) => Math.max(max, sequence), 0);
+      return `B${String(maxBpNo + 1).padStart(3, '0')}`;
+    }
     const maxEmployeeNo = this.employees
       .map((employee) => Number.parseInt(employee.employeeNo, 10))
       .filter((employeeNo) => Number.isFinite(employeeNo))
@@ -1791,8 +1849,25 @@ export class AppComponent implements OnInit {
     return String(maxEmployeeNo + 1).padStart(4, '0');
   }
 
+  private refreshEmployeeNumber(employeeType: string): void {
+    this.http.get(`${this.employeesApiUrl}/next-number`, {
+      params: new HttpParams().set('employeeType', employeeType),
+      responseType: 'text'
+    }).subscribe({
+      next: (employeeNo) => {
+        if (this.employeeCreateMode && this.editingEmployee?.employeeType === employeeType) {
+          this.editingEmployee.employeeNo = employeeNo;
+        }
+      },
+      error: () => {
+        this.employeeMessage = '\u6b21\u306e\u793e\u54e1\u756a\u53f7\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u305f\u305f\u3081\u3001\u4e00\u89a7\u306e\u793e\u54e1\u756a\u53f7\u304b\u3089\u4eee\u756a\u53f7\u3092\u8868\u793a\u3057\u307e\u3057\u305f\u3002';
+      }
+    });
+  }
+
   closeEmployeeEdit(): void {
     this.editingEmployee = null;
+    this.employeeHistory = [];
     this.employeeCreateMode = false;
   }
 
@@ -1800,18 +1875,27 @@ export class AppComponent implements OnInit {
     if (!this.editingEmployee) {
       return;
     }
+    this.employeeSaveMessage = '';
+    if (!this.editingEmployee.effectiveStartDate) {
+      this.employeeSaveMessage = '効力発生日を指定してください。';
+      return;
+    }
+    if (!this.employeeCreateMode && this.employeeHistory[0]
+        && this.editingEmployee.effectiveStartDate <= this.employeeHistory[0].effectiveStartDate) {
+      this.employeeSaveMessage = '効力発生日は最新履歴の効力発生日より後の日付を指定してください。';
+      return;
+    }
 
     if (this.employeeCreateMode) {
       this.http.post<EmployeeMaster>(this.employeesApiUrl, this.editingEmployee).subscribe({
         next: (saved) => {
-          this.employees = [...this.employees, saved].sort((left, right) =>
-            left.employeeNo.localeCompare(right.employeeNo));
-          this.updateEmployeeMasterMap(this.employees);
+          this.loadEmployees();
           this.editingEmployee = null;
           this.employeeCreateMode = false;
           this.employeeMessage = '\u793e\u54e1\u60c5\u5831\u3092\u65b0\u898f\u767b\u9332\u3057\u307e\u3057\u305f\u3002';
         },
-        error: () => {
+        error: (error) => {
+          this.employeeSaveMessage = error.error?.detail || error.error?.message || '社員情報の新規登録に失敗しました。';
           this.employeeMessage = '\u793e\u54e1\u60c5\u5831\u306e\u65b0\u898f\u767b\u9332\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
         }
       });
@@ -1823,13 +1907,12 @@ export class AppComponent implements OnInit {
       this.editingEmployee
     ).subscribe({
       next: (saved) => {
-        this.employees = this.employees.map((employee) =>
-          employee.employeeNo === saved.employeeNo ? saved : employee
-        );
+        this.loadEmployees();
         this.editingEmployee = null;
         this.employeeMessage = '\u793e\u54e1\u60c5\u5831\u3092\u8a02\u6b63\u3057\u307e\u3057\u305f\u3002';
       },
-      error: () => {
+      error: (error) => {
+        this.employeeSaveMessage = error.error?.detail || error.error?.message || '社員情報の訂正に失敗しました。';
         this.employeeMessage = '\u793e\u54e1\u60c5\u5831\u306e\u8a02\u6b63\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002';
       }
     });

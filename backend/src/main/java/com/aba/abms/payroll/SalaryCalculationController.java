@@ -62,23 +62,24 @@ public class SalaryCalculationController {
   public SalaryConditionResponse copyPrevious(@RequestParam String paymentMonth) {
     String targetMonth = normalizePaymentMonth(paymentMonth);
     String sourceMonth = previousMonth(targetMonth);
-    List<SalaryConditionRow> rows = loadConditionRows(sourceMonth).stream()
-        .map(row -> new SalaryConditionRow(
-            row.employeeNo(),
-            row.employeeName(),
-            row.employeeType(),
-            targetMonth,
-            row.baseSalary(),
-            row.consumptionTaxRate(),
-            row.commutingAllowance(),
-            row.managementAllowance(),
-            row.transportationAdjustment(),
-            row.overtimePay(),
-            row.advanceExpense(),
-            row.advanceExpense2(),
-            row.otherAmount(),
-            row.otherItemName()))
-        .toList();
+    List<SalaryConditionRow> rows = jdbcTemplate.query("""
+        select e.employee_no, e.employee_name, e.employee_type,
+               :paymentMonth as payment_month,
+               coalesce(e.base_salary, 0) as base_salary,
+               coalesce(e.consumption_tax_rate, 0) as consumption_tax_rate,
+               coalesce(c.commuting_allowance, 0) as commuting_allowance,
+               coalesce(c.management_allowance, 0) as management_allowance,
+               coalesce(c.transportation_adjustment, 0) as transportation_adjustment,
+               coalesce(c.overtime_pay, 0) as overtime_pay,
+               coalesce(c.advance_expense, 0) as advance_expense,
+               coalesce(c.advance_expense2, 0) as advance_expense2,
+               coalesce(c.other_amount, 0) as other_amount,
+               coalesce(c.other_item_name, '') as other_item_name
+        from employee_masters_for_month(:paymentMonth) e
+        join monthly_salary_calculation_conditions c on c.employee_no = e.employee_no
+          and c.payment_month = :sourceMonth
+        order by e.employee_no
+        """, Map.of("paymentMonth", targetMonth, "sourceMonth", sourceMonth), new SalaryConditionRowMapper());
     return new SalaryConditionResponse(targetMonth, sourceMonth, false, rows);
   }
 
@@ -90,7 +91,7 @@ public class SalaryCalculationController {
       if (row.employeeNo() == null || row.employeeNo().isBlank()) {
         continue;
       }
-      upsertEmployee(row);
+      upsertEmployee(targetMonth, row);
       upsertCondition(targetMonth, row);
     }
     return conditions(targetMonth);
@@ -111,7 +112,7 @@ public class SalaryCalculationController {
       if (row.employeeNo() == null || row.employeeNo().isBlank()) {
         continue;
       }
-      String employeeType = findEmployeeType(row.employeeNo());
+      String employeeType = findEmployeeType(row.employeeNo(), targetMonth);
       boolean employeeTypeOne = isEmployeeTypeOne(employeeType);
       boolean employmentInsuranceExempt = isEmploymentInsuranceExemptEmployee(row.employeeNo());
       CompanyBurden companyBurden = calculateCompanyBurden(
@@ -205,7 +206,7 @@ public class SalaryCalculationController {
           coalesce(c.advance_expense2, 0) as advance_expense2,
           coalesce(c.other_amount, 0) as other_amount,
           coalesce(c.other_item_name, '') as other_item_name
-        from employee_masters e
+        from employee_masters_for_month(:paymentMonth) e
         join monthly_salary_calculation_conditions c
           on c.employee_no = e.employee_no
          and c.payment_month = :paymentMonth
@@ -230,7 +231,7 @@ public class SalaryCalculationController {
           0 as advance_expense2,
           0 as other_amount,
           '' as other_item_name
-        from employee_masters e
+        from employee_masters_for_month(:paymentMonth) e
         where e.employee_type = '0'
           and e.deletion_flag = '0'
         order by e.employee_no
@@ -250,10 +251,11 @@ public class SalaryCalculationController {
     return YearMonth.now().format(PAYMENT_MONTH_FORMATTER).equals(paymentMonth);
   }
 
-  private void upsertEmployee(SalaryConditionRow row) {
+  private void upsertEmployee(String paymentMonth, SalaryConditionRow row) {
     Map<String, Object> params = new HashMap<>();
     params.put("employeeNo", row.employeeNo().trim());
     params.put("employeeName", row.employeeName() == null ? "" : row.employeeName().trim());
+    params.put("paymentMonth", paymentMonth);
     jdbcTemplate.update("""
         insert into employee_masters (
           employee_no,
@@ -261,20 +263,18 @@ public class SalaryCalculationController {
           employee_type,
           base_salary,
           dependent_count,
-          deduction_count
-        ) values (
+          deduction_count,
+          effective_start_date
+        ) select
           :employeeNo,
           :employeeName,
           '1',
           0,
           0,
-          0
-        )
-        on conflict (employee_no) do update set
-          employee_name = case
-            when :employeeName = '' then employee_masters.employee_name
-            else :employeeName
-          end
+          0,
+          to_date(:paymentMonth, 'YYYYMM')
+        where not exists (select 1 from employee_masters where employee_no = :employeeNo)
+        on conflict (employee_no, effective_start_date) do nothing
         """, params);
   }
 
@@ -536,7 +536,7 @@ public class SalaryCalculationController {
       return ZERO;
     }
 
-    int deductionCount = findDeductionCount(employeeNo);
+    int deductionCount = findDeductionCount(employeeNo, paymentMonth);
     int lookupDeductionCount = Math.min(deductionCount, 7);
     Map<String, Object> params = new HashMap<>();
     params.put("taxYear", paymentMonth.substring(0, 4));
@@ -584,21 +584,21 @@ public class SalaryCalculationController {
     return money(tax.max(ZERO));
   }
 
-  private int findDeductionCount(String employeeNo) {
+  private int findDeductionCount(String employeeNo, String paymentMonth) {
     List<Integer> counts = jdbcTemplate.query("""
         select deduction_count
-        from employee_masters
+        from employee_masters_for_month(:paymentMonth)
         where employee_no = :employeeNo
-        """, Map.of("employeeNo", employeeNo), (rs, rowNum) -> rs.getInt("deduction_count"));
+        """, Map.of("employeeNo", employeeNo, "paymentMonth", paymentMonth), (rs, rowNum) -> rs.getInt("deduction_count"));
     return counts.isEmpty() ? 0 : Math.max(counts.get(0), 0);
   }
 
-  private String findEmployeeType(String employeeNo) {
+  private String findEmployeeType(String employeeNo, String paymentMonth) {
     List<String> types = jdbcTemplate.query("""
         select employee_type
-        from employee_masters
+        from employee_masters_for_month(:paymentMonth)
         where employee_no = :employeeNo
-        """, Map.of("employeeNo", employeeNo), (rs, rowNum) -> rs.getString("employee_type"));
+        """, Map.of("employeeNo", employeeNo, "paymentMonth", paymentMonth), (rs, rowNum) -> rs.getString("employee_type"));
     return types.isEmpty() ? "" : types.get(0);
   }
 

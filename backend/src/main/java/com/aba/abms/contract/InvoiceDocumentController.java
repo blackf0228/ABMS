@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.ResultSet;
@@ -77,10 +76,11 @@ public class InvoiceDocumentController {
 
     YearMonth currentMonth = request.toYearMonth();
     List<InvoiceItem> items = findInvoiceItems(customerName, currentMonth);
-    if (items.isEmpty()) {
+    List<NonTaxableSalesItem> nonTaxableItems = findNonTaxableSalesItems(customerName, currentMonth);
+    if (items.isEmpty() && nonTaxableItems.isEmpty()) {
       throw new IllegalStateException("請求書の対象となる契約がありません。");
     }
-    return generateInvoice(customerName, items, currentMonth);
+    return generateInvoice(customerName, items, nonTaxableItems, currentMonth);
   }
 
   @PostMapping("/invoice-documents/bulk")
@@ -90,8 +90,9 @@ public class InvoiceDocumentController {
     List<String> fileNames = new ArrayList<>();
     for (String customerName : customerNames) {
       List<InvoiceItem> items = findInvoiceItems(customerName, targetMonth);
-      if (!items.isEmpty()) {
-        fileNames.add(generateInvoice(customerName, items, targetMonth).fileName());
+      List<NonTaxableSalesItem> nonTaxableItems = findNonTaxableSalesItems(customerName, targetMonth);
+      if (!items.isEmpty() || !nonTaxableItems.isEmpty()) {
+        fileNames.add(generateInvoice(customerName, items, nonTaxableItems, targetMonth).fileName());
       }
     }
     return new InvoiceDocumentBulkResponse(
@@ -102,16 +103,28 @@ public class InvoiceDocumentController {
 
   private List<String> findBulkCustomerNames(YearMonth targetMonth) {
     return jdbcTemplate.queryForList("""
-        select distinct c.customer_name
-        from contracts c
-        left join customer_masters customer
-          on customer.company_name = c.customer_name
-        where customer.company_id is not null
-          and customer.company_id <> '0000'
-          and c.operation_status = '契約中'
-          and c.contract_start_date <= :monthEnd
-          and (c.contract_end_date is null or c.contract_end_date >= :monthStart)
-        order by c.customer_name
+        select customer_name
+        from (
+          select distinct c.customer_name
+          from contracts c
+          join customer_masters customer
+            on customer.company_name = c.customer_name
+          where customer.company_id <> '0000'
+            and c.contract_start_date <= :monthEnd
+            and (c.contract_end_date is null or c.contract_end_date >= :monthStart)
+          union
+          select distinct customer.company_name as customer_name
+          from sales_imports s
+          join customer_masters customer
+            on customer.company_id = s.billing_destination_company_id
+          where s.billing_source_company_id = '0000'
+            and (
+              s.item_type in ('TRANSPORT', 'NON_TAX_ADJ')
+              or trim(coalesce(s.engineer_name, '')) = ''
+            )
+            and s.billing_month between :monthStart and :monthEnd
+        ) customers
+        order by customer_name
         """,
         Map.of(
             "monthStart", targetMonth.atDay(1),
@@ -131,14 +144,13 @@ public class InvoiceDocumentController {
           c.settlement_upper_hour,
           a.working_hours
         from contracts c
-        left join employee_masters engineer
+        left join employee_masters_for_period(:monthStart, :monthEnd) engineer
           on engineer.employee_no = c.engineer_name
         left join attendance_hours a
           on a.contract_no = c.contract_no
          and a.engineer_name = c.engineer_name
          and a.working_month = :workingMonth
         where c.customer_name = :customerName
-          and c.operation_status = '契約中'
           and c.contract_start_date <= :monthEnd
           and (c.contract_end_date is null or c.contract_end_date >= :monthStart)
         order by c.engineer_name, c.contract_no
@@ -151,9 +163,45 @@ public class InvoiceDocumentController {
         new InvoiceItemMapper());
   }
 
+  private List<NonTaxableSalesItem> findNonTaxableSalesItems(String customerName, YearMonth currentMonth) {
+    return jdbcTemplate.query(
+        """
+        select
+          coalesce(nullif(trim(concat_ws(' ', engineer.last_name, engineer.first_name)), ''), engineer.employee_name, s.engineer_name) as engineer_name,
+          s.billing_amount,
+          case
+            when s.item_type in ('TRANSPORT', 'NON_TAX_ADJ') then s.item_type
+            when trim(coalesce(s.engineer_name, '')) = '' then 'NON_TAX_BLANK'
+            else s.item_type
+          end as item_type
+        from sales_imports s
+        join customer_masters customer
+          on customer.company_id = s.billing_destination_company_id
+        left join employee_masters_for_period(:monthStart, :monthEnd) engineer
+          on engineer.employee_no = s.engineer_name
+        where s.billing_source_company_id = '0000'
+          and (
+            s.item_type in ('TRANSPORT', 'NON_TAX_ADJ')
+            or trim(coalesce(s.engineer_name, '')) = ''
+          )
+          and customer.company_name = :customerName
+          and s.billing_month between :monthStart and :monthEnd
+        order by s.no
+        """,
+        Map.of(
+            "customerName", customerName,
+            "monthStart", currentMonth.atDay(1),
+            "monthEnd", currentMonth.atEndOfMonth()),
+        (rs, rowNum) -> new NonTaxableSalesItem(
+            rs.getString("engineer_name"),
+            rs.getBigDecimal("billing_amount"),
+            rs.getString("item_type")));
+  }
+
   private InvoiceDocumentResponse generateInvoice(
       String customerName,
       List<InvoiceItem> items,
+      List<NonTaxableSalesItem> nonTaxableItems,
       YearMonth currentMonth) throws IOException {
     Path projectRoot = resolveProjectRoot();
     Path outputDirectory = projectRoot.resolve("output").resolve("請求書");
@@ -165,13 +213,17 @@ public class InvoiceDocumentController {
         .resolve("要件")
         .resolve("請求書_取引先名_請求年月.xlsx");
 
-    List<InvoiceDetail> details = buildInvoiceDetails(items, currentMonth);
+    List<InvoiceDetail> details = buildInvoiceDetails(customerName, items, nonTaxableItems, currentMonth);
     BigDecimal subtotal = details.stream()
         .map(InvoiceDetail::amount)
         .filter(value -> value != null)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal tax = subtotal.multiply(new BigDecimal("0.10"))
-        .setScale(0, RoundingMode.HALF_UP);
+    BigDecimal nonTaxableSubtotal = details.stream()
+        .filter(item -> !item.taxable())
+        .map(InvoiceDetail::amount)
+        .filter(value -> value != null)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal tax = InvoiceDocumentPolicy.calculateConsumptionTax(subtotal, nonTaxableSubtotal);
     BigDecimal total = subtotal.add(tax);
 
     try (InputStream input = Files.newInputStream(templatePath);
@@ -191,7 +243,7 @@ public class InvoiceDocumentController {
   private static void fillHeader(Sheet sheet, String customerName, YearMonth currentMonth, BigDecimal total) {
     replaceText(sheet, "【発行年月日】", currentMonth.atEndOfMonth().plusDays(1).format(DATE_FORMAT));
     replaceText(sheet, "【取引先名】", customerName);
-    replaceText(sheet, "【支払期日】", currentMonth.plusMonths(2).atEndOfMonth().format(DATE_FORMAT));
+    InvoiceDocumentPolicy.fillPaymentDueDate(sheet, customerName, currentMonth);
     replaceNumber(sheet, "【合計結果】", total);
   }
 
@@ -221,25 +273,32 @@ public class InvoiceDocumentController {
   }
 
   private static List<InvoiceDetail> buildInvoiceDetails(
-      List<InvoiceItem> items, YearMonth currentMonth) {
+      String customerName,
+      List<InvoiceItem> items,
+      List<NonTaxableSalesItem> nonTaxableItems,
+      YearMonth currentMonth) {
     int workingDays = businessDays(currentMonth);
     List<InvoiceDetail> details = new java.util.ArrayList<>();
     for (InvoiceItem item : items) {
+      String engineerName = InvoiceDocumentPolicy.displayEngineerName(item.engineerName());
       details.add(new InvoiceDetail(
           "\u30b7\u30b9\u30c6\u30e0\u958b\u767a\u652f\u63f4",
           BigDecimal.ONE,
           item.contractAmount(),
           item.contractAmount(),
-          item.engineerName(),
-          false));
+          engineerName,
+          false,
+          true));
 
       Integer lowerHour = resolvedHour(item.settlementLowerHour(), 8 * workingDays - 4);
       Integer upperHour = resolvedHour(item.settlementUpperHour(), 8 * workingDays + 20);
-      BigDecimal underUnitPrice = unitPrice(item.contractAmount(), lowerHour, 10);
+      BigDecimal underUnitPrice = InvoiceDocumentPolicy.settlementUnitPrice(
+          customerName, item.contractAmount(), lowerHour);
       BigDecimal overUnitPrice = item.settlementUpperHour() != null
           && item.settlementUpperHour() == 999
-              ? unitPrice(item.contractAmount(), 160, 10)
-              : unitPrice(item.contractAmount(), upperHour, 10);
+              ? InvoiceDocumentPolicy.settlementUnitPrice(customerName, item.contractAmount(), 160)
+              : InvoiceDocumentPolicy.settlementUnitPrice(
+                  customerName, item.contractAmount(), upperHour);
       BigDecimal workingHours = item.workingHours();
 
       if (workingHours != null && workingHours.compareTo(BigDecimal.ZERO) != 0
@@ -247,11 +306,12 @@ public class InvoiceDocumentController {
           && workingHours.compareTo(BigDecimal.valueOf(upperHour)) > 0) {
         BigDecimal quantity = workingHours.subtract(BigDecimal.valueOf(upperHour));
         details.add(new InvoiceDetail(
-            "\u30b7\u30b9\u30c6\u30e0\u652f\u63f4\uff08\u8d85\u904e\u7cbe\u7b97\uff09",
+            InvoiceDocumentPolicy.settlementProductName(true),
             quantity,
             overUnitPrice,
             overUnitPrice.multiply(quantity),
-            item.engineerName(),
+            engineerName,
+            true,
             true));
       }
       if (workingHours != null && workingHours.compareTo(BigDecimal.ZERO) != 0
@@ -259,13 +319,29 @@ public class InvoiceDocumentController {
           && workingHours.compareTo(BigDecimal.valueOf(lowerHour)) < 0) {
         BigDecimal quantity = BigDecimal.valueOf(lowerHour).subtract(workingHours);
         details.add(new InvoiceDetail(
-            "\u30b7\u30b9\u30c6\u30e0\u652f\u63f4\uff08\u4e0d\u8db3\u63a7\u9664\uff09",
+            InvoiceDocumentPolicy.settlementProductName(false),
             quantity,
             underUnitPrice,
             underUnitPrice.multiply(quantity).negate(),
-            item.engineerName(),
+            engineerName,
+            true,
             true));
       }
+    }
+    for (NonTaxableSalesItem item : nonTaxableItems) {
+      String productName = switch (item.itemType()) {
+        case "TRANSPORT" -> "交通費";
+        case "NON_TAX_BLANK" -> "売上（技術者未設定・非課税）";
+        default -> "売上調整（非課税）";
+      };
+      details.add(new InvoiceDetail(
+          productName,
+          BigDecimal.ONE,
+          item.amount(),
+          item.amount(),
+          item.engineerName(),
+          false,
+          !InvoiceDocumentPolicy.isNonTaxableSale(item.itemType(), item.engineerName())));
     }
     return details;
   }
@@ -275,17 +351,6 @@ public class InvoiceDocumentController {
       return null;
     }
     return configuredHour == 999 ? calculatedHour : configuredHour;
-  }
-
-  private static BigDecimal unitPrice(
-      BigDecimal contractAmount, Integer hour, int roundingUnit) {
-    if (contractAmount == null || hour == null || hour <= 0) {
-      return null;
-    }
-    return contractAmount
-        .divide(BigDecimal.valueOf(hour), 10, RoundingMode.DOWN)
-        .divide(BigDecimal.valueOf(roundingUnit), 0, RoundingMode.DOWN)
-        .multiply(BigDecimal.valueOf(roundingUnit));
   }
 
   private static int businessDays(YearMonth month) {
@@ -539,7 +604,11 @@ public class InvoiceDocumentController {
       BigDecimal unitPrice,
       BigDecimal amount,
       String remarks,
-      boolean adjustment) {
+      boolean adjustment,
+      boolean taxable) {
+  }
+
+  private record NonTaxableSalesItem(String engineerName, BigDecimal amount, String itemType) {
   }
 
   private static class InvoiceItemMapper implements RowMapper<InvoiceItem> {

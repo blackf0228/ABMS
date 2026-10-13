@@ -3,16 +3,31 @@ package com.aba.abms.payroll;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "employee_masters")
+@IdClass(EmployeeMasterId.class)
 public class EmployeeMaster {
 
   @Id
   @Column(name = "employee_no", length = 20)
   private String employeeNo;
+
+  @Id
+  @Column(name = "effective_start_date", nullable = false)
+  private LocalDate effectiveStartDate;
+
+  @Column(name = "effective_end_date", nullable = false)
+  private LocalDate effectiveEndDate = LocalDate.of(9999, 12, 31);
+
+  public LocalDate getEffectiveStartDate() { return effectiveStartDate; }
+  public void setEffectiveStartDate(LocalDate value) { effectiveStartDate = value; }
+  public LocalDate getEffectiveEndDate() { return effectiveEndDate; }
+  public void setEffectiveEndDate(LocalDate value) { effectiveEndDate = value; }
 
   @Column(name = "employee_name", nullable = false, length = 100)
   private String employeeName;

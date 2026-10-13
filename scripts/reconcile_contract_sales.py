@@ -78,7 +78,8 @@ def main() -> None:
                c.engineer_company_name, coalesce(engineer_company.company_id, ''),
                c.contract_start_date, c.contract_end_date
         from contracts c
-        left join employee_masters e on e.employee_no = c.engineer_name
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) e on e.employee_no = c.engineer_name
         left join customer_masters customer on customer.company_name = c.customer_name
         left join customer_masters engineer_company on engineer_company.company_name = c.engineer_company_name
         order by c.contract_no
@@ -110,7 +111,7 @@ def main() -> None:
                coalesce(src.company_name, s.billing_source_company_id),
                coalesce(dst.company_name, s.billing_destination_company_id)
         from sales_imports s
-        left join employee_masters e on e.employee_no = s.engineer_name
+        left join lateral employee_masters_for_month(to_char(s.billing_month, 'YYYYMM')) e on e.employee_no = s.engineer_name
         left join customer_masters src on src.company_id = s.billing_source_company_id
         left join customer_masters dst on dst.company_id = s.billing_destination_company_id
         order by s.billing_month, s.no

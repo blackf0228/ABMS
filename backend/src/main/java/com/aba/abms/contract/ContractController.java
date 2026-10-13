@@ -34,6 +34,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContractController {
 
   private static final int DEFAULT_PAGE_SIZE = 30;
+  private static final String OTHER_THAN_CMC_SOFT = "__CMC_SOFT_OTHER__";
+  private static final String CMC_SOFT_COMPANY_NAME = "株式会社CMCソフト";
   private static final String ENGINEER_DISPLAY_SQL = "coalesce(nullif(trim(concat_ws(' ', engineer.last_name, engineer.first_name)), ''), engineer.employee_name, c.engineer_name)";
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
@@ -46,8 +48,6 @@ public class ContractController {
   public ContractPageResponse search(
       @RequestParam(required = false) String engineerName,
       @RequestParam(required = false) String operationStatus,
-      @RequestParam(required = false) String contractStartDateFrom,
-      @RequestParam(required = false) String contractEndDateTo,
       @RequestParam(required = false) String effectiveMonthFrom,
       @RequestParam(required = false) String effectiveMonthTo,
       @RequestParam(required = false) String customerId,
@@ -66,7 +66,8 @@ public class ContractController {
           on customer.company_name = c.customer_name
         left join customer_masters engineer_company
           on engineer_company.company_name = c.engineer_company_name
-        left join employee_masters engineer
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) engineer
           on engineer.employee_no = c.engineer_name
         where 1 = 1
         """);
@@ -92,14 +93,6 @@ public class ContractController {
       fromWhere.append(" and c.operation_status = :operationStatus ");
       params.put("operationStatus", operationStatus.trim());
     }
-    if (contractStartDateFrom != null && !contractStartDateFrom.isBlank()) {
-      fromWhere.append(" and c.contract_start_date >= cast(:contractStartDateFrom as date) ");
-      params.put("contractStartDateFrom", contractStartDateFrom.trim());
-    }
-    if (contractEndDateTo != null && !contractEndDateTo.isBlank()) {
-      fromWhere.append(" and c.contract_end_date <= cast(:contractEndDateTo as date) ");
-      params.put("contractEndDateTo", contractEndDateTo.trim());
-    }
     if (effectiveMonthFrom != null && !effectiveMonthFrom.isBlank()) {
       fromWhere.append(" and (c.contract_end_date is null or c.contract_end_date >= cast(:effectiveMonthFrom || '-01' as date)) ");
       params.put("effectiveMonthFrom", effectiveMonthFrom.trim());
@@ -109,12 +102,22 @@ public class ContractController {
       params.put("effectiveMonthTo", effectiveMonthTo.trim());
     }
     if (customerId != null && !customerId.isBlank()) {
-      fromWhere.append(" and customer.company_id = :customerId ");
-      params.put("customerId", customerId.trim());
+      if (OTHER_THAN_CMC_SOFT.equals(customerId.trim())) {
+        fromWhere.append(" and c.customer_name IS DISTINCT FROM :excludedCustomerName ");
+        params.put("excludedCustomerName", CMC_SOFT_COMPANY_NAME);
+      } else {
+        fromWhere.append(" and customer.company_id = :customerId ");
+        params.put("customerId", customerId.trim());
+      }
     }
     if (engineerCompanyId != null && !engineerCompanyId.isBlank()) {
-      fromWhere.append(" and engineer_company.company_id = :engineerCompanyId ");
-      params.put("engineerCompanyId", engineerCompanyId.trim());
+      if (OTHER_THAN_CMC_SOFT.equals(engineerCompanyId.trim())) {
+        fromWhere.append(" and c.engineer_company_name IS DISTINCT FROM :excludedEngineerCompanyName ");
+        params.put("excludedEngineerCompanyName", CMC_SOFT_COMPANY_NAME);
+      } else {
+        fromWhere.append(" and engineer_company.company_id = :engineerCompanyId ");
+        params.put("engineerCompanyId", engineerCompanyId.trim());
+      }
     }
     if (projectAffiliation != null && !projectAffiliation.isBlank()) {
       fromWhere.append(" and c.project_affiliation = :projectAffiliation ");
@@ -268,7 +271,8 @@ public class ContractController {
           c.settlement_lower_hour,
           c.settlement_upper_hour
         from contracts c
-        left join employee_masters engineer
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) engineer
           on engineer.employee_no = c.engineer_name
         where c.contract_no = :contractNo
         """;
@@ -291,7 +295,8 @@ public class ContractController {
         from employee_masters
         where replace(replace(trim(coalesce(last_name, '') || ' ' || coalesce(first_name, '')), ' ', ''), '　', '')
             = replace(replace(trim(:engineerName), ' ', ''), '　', '')
-        order by case when deletion_flag = '0' then 0 else 1 end, employee_no
+        group by employee_no
+        order by min(case when deletion_flag = '0' then 0 else 1 end), employee_no
         limit 1
         """, Map.of("engineerName", normalized), String.class);
   }

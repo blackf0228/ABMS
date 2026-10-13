@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 
 public record SalesDetailItem(
     String engineerName,
-    BigDecimal billingAmount
+    BigDecimal billingAmount,
+    String itemType
 ) {
 }

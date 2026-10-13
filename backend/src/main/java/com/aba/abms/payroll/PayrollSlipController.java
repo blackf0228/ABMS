@@ -79,9 +79,9 @@ public class PayrollSlipController {
           c.advance_expense2,
           c.other_amount,
           d.transfer_payment_amount
-        from employee_masters e
-        join monthly_salary_calculation_conditions c
-          on c.employee_no = e.employee_no
+        from monthly_salary_calculation_conditions c
+        join lateral employee_masters_for_month(c.payment_month) e
+          on e.employee_no = c.employee_no
         join monthly_salary_details d
           on d.employee_no = e.employee_no
          and d.payment_month = c.payment_month
@@ -142,9 +142,9 @@ public class PayrollSlipController {
             then coalesce(d.transfer_payment_amount, 0) + coalesce(d.employment_insurance_amount, 0)
             else d.transfer_payment_amount
           end as transfer_payment_amount
-        from employee_masters e
-        join monthly_salary_calculation_conditions c
-          on c.employee_no = e.employee_no
+        from monthly_salary_calculation_conditions c
+        join lateral employee_masters_for_month(c.payment_month) e
+          on e.employee_no = c.employee_no
         join monthly_salary_details d
           on d.employee_no = e.employee_no
          and d.payment_month = c.payment_month

@@ -123,7 +123,7 @@ const salaryRows = query(`
   from monthly_salary_details d
   left join monthly_salary_calculation_conditions c
     on c.employee_no = d.employee_no and c.payment_month = d.payment_month
-  left join employee_masters e on e.employee_no = d.employee_no
+  left join lateral employee_masters_for_month(d.payment_month) e on e.employee_no = d.employee_no
   where replace(d.payment_month, '-', '') between '${paymentMonths[0]}' and '${paymentMonths[paymentMonths.length - 1]}'
   order by replace(d.payment_month, '-', ''), d.employee_no
 `);
@@ -136,7 +136,7 @@ const shareholderRows = query(`
          s.contract_amount + s.overtime_amount - s.base_salary
            - s.advance_expense2 - s.company_total_amount
   from shareholder_salaries s
-  left join employee_masters e on e.employee_no = s.employee_no
+  left join lateral employee_masters_for_month(s.payment_month) e on e.employee_no = s.employee_no
   where replace(s.payment_month, '-', '') between '202510' and '202609'
   order by replace(s.payment_month, '-', ''), s.employee_no
 `);
@@ -255,7 +255,7 @@ const offbookRows = query(`
          coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, o.handler_employee_no),
          o.amount, o.currency, case when o.currency like '%人民元%' then 24 else 1 end,
          case when o.currency like '%人民元%' then o.amount * 24 else o.amount end, o.reason
-  from off_book_expenses o left join employee_masters e on e.employee_no=o.handler_employee_no
+  from off_book_expenses o left join lateral employee_masters_for_period(o.received_date, o.received_date) e on e.employee_no=o.handler_employee_no
   where o.received_date between date '2025-10-01' and date '2026-09-30'
   order by o.received_date, o.expense_no
 `);

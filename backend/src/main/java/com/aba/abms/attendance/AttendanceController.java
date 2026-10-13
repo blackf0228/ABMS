@@ -52,7 +52,7 @@ public class AttendanceController {
           a.remarks
         from attendance_hours a
         left join contracts c on c.contract_no = a.contract_no
-        left join employee_masters e on e.employee_no = a.engineer_name
+        left join lateral employee_masters_for_month(a.working_month) e on e.employee_no = a.engineer_name
         where 1 = 1
         """);
     Map<String, Object> params = new HashMap<>();
@@ -75,7 +75,7 @@ public class AttendanceController {
           a.working_hours,
           a.remarks
         from contracts c
-        left join employee_masters e on e.employee_no = c.engineer_name
+        left join employee_masters_for_month(:workingMonth) e on e.employee_no = c.engineer_name
         left join attendance_hours a
           on a.contract_no = c.contract_no
          and a.engineer_name = c.engineer_name
@@ -171,7 +171,7 @@ public class AttendanceController {
           a.remarks
         from attendance_hours a
         left join contracts c on c.contract_no = a.contract_no
-        left join employee_masters e on e.employee_no = a.engineer_name
+        left join lateral employee_masters_for_month(a.working_month) e on e.employee_no = a.engineer_name
         where a.contract_no = :contractNo
           and a.engineer_name = :engineerName
           and a.working_month = :workingMonth

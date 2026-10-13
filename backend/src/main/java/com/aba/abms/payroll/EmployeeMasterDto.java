@@ -1,6 +1,7 @@
 package com.aba.abms.payroll;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public record EmployeeMasterDto(
     String employeeNo,
@@ -12,7 +13,9 @@ public record EmployeeMasterDto(
     Integer dependentCount,
     Integer deductionCount,
     BigDecimal consumptionTaxRate,
-    String deletionFlag
+    String deletionFlag,
+    LocalDate effectiveStartDate,
+    LocalDate effectiveEndDate
 ) {
 
   public static EmployeeMasterDto fromEntity(EmployeeMaster entity) {
@@ -26,6 +29,8 @@ public record EmployeeMasterDto(
         entity.getDependentCount(),
         entity.getDeductionCount(),
         entity.getConsumptionTaxRate(),
-        entity.getDeletionFlag());
+        entity.getDeletionFlag(),
+        entity.getEffectiveStartDate(),
+        entity.getEffectiveEndDate());
   }
 }

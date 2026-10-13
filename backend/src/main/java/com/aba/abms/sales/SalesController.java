@@ -14,13 +14,17 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/sales")
@@ -131,9 +135,14 @@ public class SalesController {
     String detailSql = """
         select
           coalesce(nullif(trim(concat_ws(' ', e.last_name, e.first_name)), ''), e.employee_name, s.engineer_name) as engineer_name,
-          s.billing_amount
+          s.billing_amount,
+          case
+            when s.item_type in ('TRANSPORT', 'NON_TAX_ADJ') then s.item_type
+            when trim(coalesce(s.engineer_name, '')) = '' then 'NON_TAX_BLANK'
+            else s.item_type
+          end as item_type
         from sales_imports s
-        left join employee_masters e
+        left join lateral employee_masters_for_month(to_char(s.billing_month, 'YYYYMM')) e
           on e.employee_no = s.engineer_name
         where s.billing_source_company_id = '0000'
           and s.billing_month between :startMonth and :endMonth
@@ -242,46 +251,81 @@ public class SalesController {
         sales as (
           select
             date_trunc('month', billing_month)::date as target_month,
-            count(*) filter (where billing_source_company_id = '0000')::numeric as working_person_count,
+            count(distinct engineer_name) filter (where billing_source_company_id = '0000')::numeric as working_person_count,
             coalesce(sum(billing_amount) filter (where billing_source_company_id = '0000'), 0) as sales_amount,
-            coalesce(sum(billing_amount) filter (where billing_source_company_id <> '0000'), 0) as bp_payment_amount
+            coalesce(sum(billing_amount) filter (
+              where billing_destination_company_id = '0000'
+                and billing_source_company_id <> '0000'
+            ), 0) as bp_payment_amount
           from sales_imports
           where billing_month between :startMonth and :endMonth
           group by date_trunc('month', billing_month)::date
         ),
-        salaries as (
+        salary_rows as (
           select
-            case
-              when d.payment_month ~ '^\\d{6}$' then to_date(d.payment_month || '01', 'YYYYMMDD')
-              else to_date(d.payment_month || '-01', 'YYYY-MM-DD')
-            end as target_month,
-            sum(
-              coalesce(d.transfer_payment_amount, 0)
-              + coalesce(d.company_total_amount, 0)
-              - coalesce(c.advance_expense2, 0)
-            ) as salary_payment_amount
+            pm.target_month,
+            (case when d.employee_no in ('0001', '0002', '0006', '0010', '0011') then
+              case when ct.contract_count > 0 then coalesce(ct.contract_amount, 0)
+                   else coalesce(c.base_salary, 0) end
+            else
+              coalesce(c.base_salary, 0)
+                + coalesce(c.commuting_allowance, 0)
+                + coalesce(c.management_allowance, 0)
+                + coalesce(c.transportation_adjustment, 0)
+                + coalesce(c.overtime_pay, 0)
+                + coalesce(d.company_total_amount, 0)
+            end) + coalesce(c.advance_expense, 0)
+              - case
+                  when d.employee_no = '0002' and replace(d.payment_month, '-', '') = '202602' then 585000
+                  when d.employee_no = '0010' and replace(d.payment_month, '-', '') = '202602' then 303600
+                  when d.employee_no = '0002' and replace(d.payment_month, '-', '') = '202607' then 918874
+                  when d.employee_no = '0010' and replace(d.payment_month, '-', '') = '202608' then 183500
+                  when d.employee_no = '0010' and replace(d.payment_month, '-', '') = '202609' then 177300
+                  when d.employee_no = '0010' and replace(d.payment_month, '-', '') = '202610' then 177300
+                  else 0
+                end as salary_payment_amount,
+            case when d.employee_no in ('0001', '0002', '0006', '0010', '0011')
+                   and ct.contract_count > 1 then
+              d.employee_no || '（' || to_char(pm.target_month, 'YYYY-MM') || '）'
+            end as duplicate_contract_employee
           from monthly_salary_details d
-          join employee_masters e
+          join lateral employee_masters_for_month(d.payment_month) e
             on e.employee_no = d.employee_no
           left join monthly_salary_calculation_conditions c
             on c.employee_no = d.employee_no
            and c.payment_month = d.payment_month
-          where case
-              when d.payment_month ~ '^\\d{6}$' then to_date(d.payment_month || '01', 'YYYYMMDD')
-              else to_date(d.payment_month || '-01', 'YYYY-MM-DD')
-            end between :startMonth and :endMonth
+          cross join lateral (
+            select (to_date(replace(d.payment_month, '-', '') || '01', 'YYYYMMDD')
+                    - interval '1 month')::date as target_month
+          ) pm
+          left join lateral (
+            select count(*) as contract_count, max(contract_amount) as contract_amount
+            from contracts
+            where engineer_name = d.employee_no
+              and contract_start_date <= pm.target_month + interval '1 month' - interval '1 day'
+              and (contract_end_date is null or contract_end_date >= pm.target_month)
+              and d.employee_no in ('0001', '0002', '0006', '0010', '0011')
+          ) ct on true
+          where pm.target_month between :startMonth and :endMonth
             and replace(e.employee_name, '　', '') <> '陳百歳'
-          group by case
-              when d.payment_month ~ '^\\d{6}$' then to_date(d.payment_month || '01', 'YYYYMMDD')
-              else to_date(d.payment_month || '-01', 'YYYY-MM-DD')
-            end
+        ),
+        salaries as (
+          select target_month, sum(salary_payment_amount) as salary_payment_amount,
+                 string_agg(duplicate_contract_employee, '、' order by duplicate_contract_employee)
+                   as duplicate_contract_employees
+          from salary_rows
+          group by target_month
         )
         select
           to_char(m.target_month, 'YYYY-MM') as posting_month,
           coalesce(s.working_person_count, 0) as working_person_count,
+          coalesce(s.sales_amount, 0) as sales_amount,
+          coalesce(s.bp_payment_amount, 0) as bp_payment_amount,
+          coalesce(sa.salary_payment_amount, 0) as salary_payment_amount,
           coalesce(s.sales_amount, 0)
             - coalesce(s.bp_payment_amount, 0)
-            - coalesce(sa.salary_payment_amount, 0) as profit_amount
+            - coalesce(sa.salary_payment_amount, 0) as profit_amount,
+          sa.duplicate_contract_employees
         from months m
         left join sales s
           on s.target_month = m.target_month
@@ -291,6 +335,12 @@ public class SalesController {
         """;
 
     return jdbcTemplate.query(sql, params, new ProfitAnalysisItemMapper());
+  }
+
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<Map<String, String>> handleProfitAnalysisError(ResponseStatusException error) {
+    return ResponseEntity.status(error.getStatusCode())
+        .body(Map.of("message", error.getReason() == null ? "利益解析に失敗しました。" : error.getReason()));
   }
 
   @GetMapping("/fiscal-profit")
@@ -466,9 +516,11 @@ public class SalesController {
           c.contract_start_date,
           c.contract_end_date
         from contracts c
-        left join employee_masters e
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) e
           on e.employee_no = c.project_affiliation
-        left join employee_masters contractor
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) contractor
           on contractor.employee_no = c.engineer_name
         where nullif(trim(c.project_affiliation), '') is not null
           and c.contract_start_date is not null
@@ -513,7 +565,7 @@ public class SalesController {
     jdbcTemplate.query("""
         select employee_no,
                coalesce(nullif(trim(concat_ws(' ', last_name, first_name)), ''), employee_name, employee_no) as employee_name
-        from employee_masters
+        from current_employee_masters
         where employee_no in (:employeeNos)
         """, Map.of("employeeNos", ALLOWANCE_EMPLOYEE_NOS), (rs, rowNum) -> {
           allowanceEmployeeNames.put(rs.getString("employee_no"), rs.getString("employee_name"));
@@ -536,9 +588,11 @@ public class SalesController {
           c.contract_start_date,
           c.contract_end_date
         from contracts c
-        left join employee_masters e
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) e
           on e.employee_no = c.project_affiliation
-        left join employee_masters engineer
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) engineer
           on engineer.employee_no = c.engineer_name
         where nullif(trim(c.project_affiliation), '') is not null
           and c.project_affiliation in (:employeeNos)
@@ -642,9 +696,9 @@ public class SalesController {
           c.contract_amount,
           c.engineer_unit_price
         from contracts c
-        left join employee_masters owner
+        left join employee_masters_for_period(:monthStart, :monthEnd) owner
           on owner.employee_no = c.project_affiliation
-        left join employee_masters engineer
+        left join employee_masters_for_period(:monthStart, :monthEnd) engineer
           on engineer.employee_no = c.engineer_name
         where c.project_affiliation = :employeeNo
           and engineer.employee_type = '2'
@@ -700,7 +754,8 @@ public class SalesController {
           c.contract_start_date,
           c.contract_end_date
         from contracts c
-        left join employee_masters engineer
+        left join lateral employee_masters_for_period(c.contract_start_date,
+          coalesce(c.contract_end_date, greatest(c.contract_start_date, current_date))) engineer
           on engineer.employee_no = c.engineer_name
         where nullif(trim(c.project_affiliation), '') is not null
           and c.project_affiliation in (:employeeNos)
@@ -847,7 +902,8 @@ public class SalesController {
     public SalesDetailItem mapRow(ResultSet rs, int rowNum) throws SQLException {
       return new SalesDetailItem(
           rs.getString("engineer_name"),
-          rs.getBigDecimal("billing_amount"));
+          rs.getBigDecimal("billing_amount"),
+          rs.getString("item_type"));
     }
   }
 
@@ -878,9 +934,17 @@ public class SalesController {
 
     @Override
     public ProfitAnalysisItem mapRow(ResultSet rs, int rowNum) throws SQLException {
+      String duplicates = rs.getString("duplicate_contract_employees");
+      if (duplicates != null && !duplicates.isBlank()) {
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+            "同月の契約が複数あるため利益を計算できません。社員番号（売上・稼働年月）：" + duplicates);
+      }
       return new ProfitAnalysisItem(
           rs.getString("posting_month"),
           rs.getBigDecimal("working_person_count"),
+          rs.getBigDecimal("sales_amount"),
+          rs.getBigDecimal("bp_payment_amount"),
+          rs.getBigDecimal("salary_payment_amount"),
           rs.getBigDecimal("profit_amount"));
     }
   }

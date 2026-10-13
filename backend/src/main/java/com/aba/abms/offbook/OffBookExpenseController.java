@@ -54,7 +54,7 @@ public class OffBookExpenseController {
           o.currency,
           o.reason
         from off_book_expenses o
-        left join employee_masters e on e.employee_no = o.handler_employee_no
+        left join lateral employee_masters_for_period(o.received_date, o.received_date) e on e.employee_no = o.handler_employee_no
         where 1 = 1
         """);
     Map<String, Object> params = new HashMap<>();
@@ -116,7 +116,7 @@ public class OffBookExpenseController {
           o.currency,
           o.reason
         from off_book_expenses o
-        left join employee_masters e on e.employee_no = o.handler_employee_no
+        left join lateral employee_masters_for_period(o.received_date, o.received_date) e on e.employee_no = o.handler_employee_no
         where o.expense_no = :expenseNo
         """, Map.of("expenseNo", expenseNo), new OffBookExpenseMapper());
   }
@@ -140,7 +140,7 @@ public class OffBookExpenseController {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "必須項目を入力してください。");
     }
     Integer employeeCount = jdbcTemplate.queryForObject(
-        "select count(*) from employee_masters where employee_no = :employeeNo and employee_type = '0'",
+        "select count(*) from current_employee_masters where employee_no = :employeeNo and employee_type = '0'",
         Map.of("employeeNo", request.handlerEmployeeNo().trim()),
         Integer.class);
     if (employeeCount == null || employeeCount == 0) {

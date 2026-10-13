@@ -643,16 +643,6 @@
       </fieldset>
 
       <label>
-        契約開始（FROM）
-        <input type="date" name="contractStartDateFrom" [(ngModel)]="contractSearchForm.contractStartDateFrom">
-      </label>
-
-      <label>
-        契約終了（TO）
-        <input type="date" name="contractEndDateTo" [(ngModel)]="contractSearchForm.contractEndDateTo">
-      </label>
-
-      <label>
         有効年月（FROM）
         <input type="month" name="effectiveMonthFrom" [(ngModel)]="contractSearchForm.effectiveMonthFrom">
       </label>
@@ -665,6 +655,7 @@
       <label>
         取引先
         <select name="contractCustomerId" [(ngModel)]="contractSearchForm.customerId">
+          <option value="__CMC_SOFT_OTHER__">株式会社CMCソフト以外</option>
           <option value="">すべて</option>
           <option *ngFor="let customer of customerOptions" [value]="customer.companyId">
             {{ customer.companyName }}
@@ -675,6 +666,7 @@
       <label>
         技術者所属会社
         <select name="contractEngineerCompanyId" [(ngModel)]="contractSearchForm.engineerCompanyId">
+          <option value="__CMC_SOFT_OTHER__">株式会社CMCソフト以外</option>
           <option value="">すべて</option>
           <option *ngFor="let customer of customerOptions" [value]="customer.companyId">
             {{ customer.companyName }}
@@ -709,7 +701,7 @@
     </form>
 
     <div class="list-toolbar">
-      <p class="result-message" *ngIf="contractMessage">{{ contractMessage }}</p>
+      <p class="result-message" *ngIf="contractMessage && !contractModalMode">{{ contractMessage }}</p>
     </div>
 
     <div class="contract-bulk-actions">
@@ -906,6 +898,8 @@
             </option>
           </select>
         </label>
+
+        <p class="result-message full" *ngIf="contractMessage && contractModalMode">{{ contractMessage }}</p>
 
         <div class="actions modal-actions full">
           <button type="button" class="secondary" (click)="closeContractEdit()">戻る</button>
@@ -1176,26 +1170,38 @@
       <p class="result-message" *ngIf="profitAnalysisMessage">{{ profitAnalysisMessage }}</p>
     </div>
 
-    <div class="sales-analysis-layout monthly-analysis-layout">
+    <div class="sales-analysis-layout monthly-analysis-layout" style="grid-template-columns: minmax(0, 1fr)">
       <div class="table-wrap sales-analysis-table-wrap">
         <table class="sales-analysis-table">
           <thead>
             <tr>
               <th>計上年月</th>
-              <th>金額</th>
+              <th>稼働人数</th>
+              <th>売上</th>
+              <th>BPへの支払い</th>
+              <th>給料</th>
+              <th>利益金額</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let row of profitAnalysisResults">
               <td>{{ row.postingMonth }}</td>
+              <td class="number">{{ row.workingPersonCount | number: '1.0-0' }}</td>
+              <td class="number">{{ row.salesAmount | number: '1.0-0' }}</td>
+              <td class="number">{{ row.bpPaymentAmount | number: '1.0-0' }}</td>
+              <td class="number">{{ row.salaryPaymentAmount | number: '1.0-0' }}</td>
               <td class="number">{{ row.profitAmount | number: '1.0-0' }}</td>
             </tr>
             <tr class="total-row" *ngIf="profitAnalysisResults.length > 0">
               <td>合計金額</td>
+              <td class="number">{{ profitAnalysisComponentTotal('workingPersonCount') | number: '1.0-0' }}</td>
+              <td class="number">{{ profitAnalysisComponentTotal('salesAmount') | number: '1.0-0' }}</td>
+              <td class="number">{{ profitAnalysisComponentTotal('bpPaymentAmount') | number: '1.0-0' }}</td>
+              <td class="number">{{ profitAnalysisComponentTotal('salaryPaymentAmount') | number: '1.0-0' }}</td>
               <td class="number">{{ profitAnalysisTotalAmount() | number: '1.0-0' }}</td>
             </tr>
             <tr *ngIf="profitAnalysisResults.length === 0">
-              <td colspan="2" class="empty-row">検索結果がありません。</td>
+              <td colspan="6" class="empty-row">検索結果がありません。</td>
             </tr>
           </tbody>
         </table>
@@ -1655,51 +1661,63 @@
         <button type="button" class="modal-close" (click)="closeEmployeeEdit()">×</button>
       </header>
 
-      <form class="modal-form" (ngSubmit)="saveEmployeeEdit()">
+      <form class="modal-form" style="grid-template-columns: repeat(3, minmax(0, 1fr));" (ngSubmit)="saveEmployeeEdit()">
         <label>
           社員番号
-          <input name="editEmployeeNo" [(ngModel)]="employee.employeeNo" disabled required>
-        </label>
-
-        <label>
-          姓
-          <input name="editEmployeeLastName" [(ngModel)]="employee.lastName" maxlength="50" required>
-        </label>
-
-        <label>
-          名
-          <input name="editEmployeeFirstName" [(ngModel)]="employee.firstName" maxlength="50" required>
+          <input style="min-width: 0; width: 100%;" name="editEmployeeNo" [(ngModel)]="employee.employeeNo" disabled required>
         </label>
 
         <label>
           社員区分
-          <select name="editEmployeeType" [(ngModel)]="employee.employeeType" required>
+          <select
+            style="min-width: 0; width: 100%;"
+            name="editEmployeeType"
+            [(ngModel)]="employee.employeeType"
+            (ngModelChange)="onEmployeeTypeChange($event)"
+            required>
             <option value="0">0:正社員</option>
             <option value="1">1:個人事業主</option>
+            <option value="2">2:BP</option>
           </select>
         </label>
 
         <label>
+          効力発生日
+          <input style="min-width: 0; width: 100%;" type="date" name="editEmployeeEffectiveStartDate" [(ngModel)]="employee.effectiveStartDate"
+            min="1900-01-01" max="9999-12-31" required>
+        </label>
+
+        <label>
+          姓
+          <input style="min-width: 0; width: 100%;" name="editEmployeeLastName" [(ngModel)]="employee.lastName" maxlength="50" required>
+        </label>
+
+        <label>
+          名
+          <input style="min-width: 0; width: 100%;" name="editEmployeeFirstName" [(ngModel)]="employee.firstName" maxlength="50" required>
+        </label>
+
+        <label style="grid-column: 1;">
           基本給料
-          <input type="number" name="editBaseSalary" [(ngModel)]="employee.baseSalary" min="0" step="1" required>
+          <input style="min-width: 0; width: 100%;" type="number" name="editBaseSalary" [(ngModel)]="employee.baseSalary" min="0" step="1" required>
         </label>
 
         <label>
           扶養人数
-          <input type="number" name="editDependentCount" [(ngModel)]="employee.dependentCount" min="0" step="1" required>
+          <input style="min-width: 0; width: 100%;" type="number" name="editDependentCount" [(ngModel)]="employee.dependentCount" min="0" step="1" [disabled]="employee.employeeType === '2'" required>
         </label>
 
         <label>
           控除人数
-          <input type="number" name="editDeductionCount" [(ngModel)]="employee.deductionCount" min="0" step="1" required>
+          <input style="min-width: 0; width: 100%;" type="number" name="editDeductionCount" [(ngModel)]="employee.deductionCount" min="0" step="1" [disabled]="employee.employeeType === '2'" required>
         </label>
 
-        <label>
+        <label style="grid-column: 1;">
           消費税率
-          <input type="number" name="editConsumptionTaxRate" [(ngModel)]="employee.consumptionTaxRate" min="0" step="0.01" required>
+          <input style="min-width: 0; width: 100%;" type="number" name="editConsumptionTaxRate" [(ngModel)]="employee.consumptionTaxRate" min="0" step="0.01" [disabled]="employee.employeeType === '2'" required>
         </label>
 
-        <label *ngIf="!employeeCreateMode" class="checkbox-label">
+        <label *ngIf="!employeeCreateMode" class="checkbox-label full">
           <input
             type="checkbox"
             name="editEmployeeDeletionFlag"
@@ -1712,7 +1730,26 @@
           <button type="submit">{{ employeeCreateMode ? '新規作成' : '訂正' }}</button>
           <button type="button" class="secondary" (click)="closeEmployeeEdit()">閉じる</button>
         </div>
+        <p class="result-message full" *ngIf="employeeSaveMessage">{{ employeeSaveMessage }}</p>
       </form>
+      <section class="employee-history" style="padding: 0 20px 20px;" *ngIf="!employeeCreateMode" aria-label="社員変更履歴">
+        <h3>変更履歴</h3>
+        <p class="result-message" *ngIf="employeeHistoryMessage">{{ employeeHistoryMessage }}</p>
+        <div class="table-wrap">
+          <table style="min-width: 560px;">
+            <thead><tr><th>効力発生日</th><th>効力終了日</th><th>基本給料</th><th>扶養人数</th><th>控除人数</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let history of employeeHistory">
+                <td>{{ history.effectiveStartDate | date: 'yyyyMMdd' }}</td>
+                <td>{{ history.effectiveEndDate | date: 'yyyyMMdd' }}</td>
+                <td class="number">{{ history.baseSalary | number: '1.0-0' }}</td>
+                <td class="number">{{ history.dependentCount }}</td>
+                <td class="number">{{ history.deductionCount }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   </div>
 
@@ -1743,20 +1780,23 @@
             <thead>
               <tr>
                 <th>技術者名</th>
+                <th>区分</th>
                 <th>請求金額</th>
               </tr>
             </thead>
             <tbody>
               <tr *ngFor="let row of detail.items">
                 <td>{{ row.engineerName }}</td>
+                <td>{{ row.itemType === 'TRANSPORT' ? '交通費（消費税対象外）' : row.itemType === 'NON_TAX_ADJ' ? '売上調整（非課税）' : row.itemType === 'NON_TAX_BLANK' ? '売上（技術者未設定・非課税）' : '売上' }}</td>
                 <td class="number">{{ row.billingAmount | number: '1.0-0' }}</td>
               </tr>
               <tr class="total-row">
                 <td>合計</td>
+                <td></td>
                 <td class="number">{{ salesDetailTotal(detail) | number: '1.0-0' }}</td>
               </tr>
               <tr *ngIf="detail.items.length === 0">
-                <td colspan="2" class="empty-row">売上明細がありません。</td>
+                <td colspan="3" class="empty-row">売上明細がありません。</td>
               </tr>
             </tbody>
           </table>
