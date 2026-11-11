@@ -8,6 +8,7 @@ public record AllowanceAnalysisResponse(
     String fiscalEndMonth,
     List<String> months,
     List<AllowanceAnalysisItem> rows,
-    Map<String, Map<String, java.math.BigDecimal>> recruitmentAmounts
+    Map<String, Map<String, java.math.BigDecimal>> recruitmentAmounts,
+    Map<String, Map<String, java.math.BigDecimal>> specificAmounts
 ) {
 }

@@ -4,7 +4,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
-type ViewName = 'register' | 'search' | 'employmentRates' | 'socialPremiums' | 'salaryConditions' | 'salaryDetailPreview' | 'payrollSearch' | 'payrollDetail' | 'shareholderSalaryList' | 'contractList' | 'attendanceSearch' | 'attendanceBulk' | 'salesList' | 'salesAnalysis' | 'profitAnalysis' | 'fiscalProfitConfirmation' | 'allowanceManagement' | 'customerList' | 'employeeList' | 'offBookExpenseList';
+type ViewName = 'register' | 'search' | 'employmentRates' | 'socialPremiums' | 'salaryConditions' | 'salaryDetailPreview' | 'payrollSearch' | 'payrollDetail' | 'shareholderSalaryList' | 'contractList' | 'attendanceSearch' | 'attendanceBulk' | 'salesList' | 'bpPaymentList' | 'salesAnalysis' | 'profitAnalysis' | 'fiscalProfitConfirmation' | 'allowanceManagement' | 'customerList' | 'employeeList' | 'offBookExpenseList';
 
 interface BillingRequest {
   no?: number;
@@ -277,6 +277,21 @@ interface SalesSummaryItem {
   billingAmount: number | null;
 }
 
+interface BpPaymentSummaryItem {
+  no: number;
+  billingMonth: string;
+  billingSourceCompanyId: string;
+  billingSourceCompanyName: string;
+  billingAmount: number | null;
+}
+
+interface BpPaymentDetailResponse {
+  billingMonth: string;
+  billingSourceCompanyId: string;
+  billingSourceCompanyName: string;
+  items: SalesDetailItem[];
+}
+
 interface SalesAnalysisItem {
   billingDestinationCompanyId: string;
   billingDestinationCompanyName: string;
@@ -299,25 +314,21 @@ interface ProfitAnalysisItem {
   profitAmount: number | null;
 }
 
-interface FiscalProfitAnalysisRow {
-  itemName: string;
-  monthlyAmounts: number[];
-  totalAmount: number | null;
-}
-
 interface ProjectAffiliationProfitRow {
   employeeNo: string;
   projectAffiliation: string;
   profitAmount: number | null;
   percentage: number | null;
+  ownerContribution: number;
+  proposerContribution: number;
 }
 
 interface FiscalProfitAnalysisResponse {
   fiscalStartMonth: string;
   fiscalEndMonth: string;
   months: string[];
-  rows: FiscalProfitAnalysisRow[];
-  companyProfitTotal: number | null;
+  warnings: string[];
+  unallocatedProfit: number;
   projectAffiliationProfits: ProjectAffiliationProfitRow[];
 }
 
@@ -331,7 +342,7 @@ interface AllowanceAnalysisRow {
 }
 
 interface AllowanceDisplayRow extends AllowanceAnalysisRow {
-  isRecruitment: boolean;
+  allowanceKind: 'sales' | 'recruitment' | 'specific';
   isEmployeeGroupStart: boolean;
   employeeTotal: number;
 }
@@ -342,6 +353,7 @@ interface AllowanceAnalysisResponse {
   months: string[];
   rows: AllowanceAnalysisRow[];
   recruitmentAmounts?: Record<string, Record<string, number>>;
+  specificAmounts?: Record<string, Record<string, number>>;
 }
 
 interface AllowanceAnalysisDetail {
@@ -350,6 +362,8 @@ interface AllowanceAnalysisDetail {
   engineerName: string;
   contractAmount: number | null;
   engineerUnitPrice: number | null;
+  customerName: string | null;
+  profitAdjustment: number | null;
   allowanceAmount: number | null;
 }
 
@@ -465,6 +479,12 @@ export class AppComponent implements OnInit {
     { value: '1', label: '1:BP' },
     { value: '2', label: '2:個人事業主' }
   ];
+  private bpPaymentSearchGeneration = 0;
+  private bpPaymentDetailGeneration = 0;
+  bpPaymentMessage = '';
+  bpPaymentResults: BpPaymentSummaryItem[] = [];
+  selectedBpPaymentDetail: BpPaymentDetailResponse | null = null;
+  bpPaymentSearchForm = { startMonth: this.currentMonthInput(), endMonth: this.currentMonthInput(), billingSourceCompanyId: '' };
   salesMessage = '';
   salesResults: SalesSummaryItem[] = [];
   selectedSalesDetail: SalesDetailResponse | null = null;
@@ -478,8 +498,8 @@ export class AppComponent implements OnInit {
   fiscalProfitStartMonth = '';
   fiscalProfitEndMonth = '';
   fiscalProfitMonths: string[] = [];
-  fiscalProfitRows: FiscalProfitAnalysisRow[] = [];
-  fiscalProfitCompanyTotal = 0;
+  fiscalProfitWarnings: string[] = [];
+  fiscalProfitUnallocated = 0;
   projectAffiliationProfitRows: ProjectAffiliationProfitRow[] = [];
   projectAffiliationProfitTotal = 0;
   allowanceAnalysisMessage = '';
@@ -579,6 +599,10 @@ export class AppComponent implements OnInit {
     this.orderDocumentDialog = null;
     this.documentCreationAction = null;
     this.salesMessage = '';
+    this.bpPaymentMessage = '';
+    this.bpPaymentSearchGeneration++;
+    this.bpPaymentDetailGeneration++;
+    this.selectedBpPaymentDetail = null;
     this.salesAnalysisMessage = '';
     this.profitAnalysisMessage = '';
     this.fiscalProfitMessage = '';
@@ -613,7 +637,7 @@ export class AppComponent implements OnInit {
       this.contractPage = 0;
       this.contractTotalPages = 0;
     }
-    if (view === 'salesList') {
+    if (view === 'salesList' || view === 'bpPaymentList') {
       this.loadCustomerOptions();
     }
     if (view === 'salesAnalysis') {
@@ -647,6 +671,7 @@ export class AppComponent implements OnInit {
 
   isSalesMenuActive(): boolean {
     return this.activeView === 'salesList'
+      || this.activeView === 'bpPaymentList'
       || this.activeView === 'search'
       || this.activeView === 'register'
       || this.activeView === 'salesAnalysis'
@@ -1274,8 +1299,63 @@ export class AppComponent implements OnInit {
     this.selectedSalesDetail = null;
   }
 
-  salesDetailTotal(detail: SalesDetailResponse): number {
+  salesDetailTotal(detail: { items: SalesDetailItem[] }): number {
     return detail.items.reduce((total, row) => total + this.amount(row.billingAmount), 0);
+  }
+
+  get bpCompanyOptions(): CustomerOption[] {
+    return this.customerOptions.filter(customer => customer.companyId !== '0000');
+  }
+
+  bpPaymentTotal(): number {
+    return this.bpPaymentResults.reduce((total, row) => total + this.amount(row.billingAmount), 0);
+  }
+
+  searchBpPayments(): void {
+    const generation = ++this.bpPaymentSearchGeneration;
+    this.bpPaymentDetailGeneration++;
+    this.bpPaymentMessage = '';
+    this.bpPaymentResults = [];
+    this.selectedBpPaymentDetail = null;
+    const form = this.bpPaymentSearchForm;
+    if (!form.startMonth || !form.endMonth || form.startMonth > form.endMonth) {
+      this.bpPaymentMessage = '開始年月・終了年月を正しく指定してください。';
+      return;
+    }
+    let params = new HttpParams();
+    Object.entries(form).forEach(([key, value]) => {
+      if (value.trim()) params = params.set(key, value.trim());
+    });
+    this.http.get<BpPaymentSummaryItem[]>('http://localhost:9000/api/bp-payments', { params }).subscribe({
+      next: results => {
+        if (generation !== this.bpPaymentSearchGeneration) return;
+        this.bpPaymentResults = results;
+        this.bpPaymentMessage = `${results.length}件見つかりました。`;
+      },
+      error: () => {
+        if (generation === this.bpPaymentSearchGeneration) this.bpPaymentMessage = 'BP売上状況の検索に失敗しました。';
+      }
+    });
+  }
+
+  openBpPaymentDetail(row: BpPaymentSummaryItem): void {
+    const generation = ++this.bpPaymentDetailGeneration;
+    this.selectedBpPaymentDetail = null;
+    const params = new HttpParams().set('billingMonth', row.billingMonth)
+      .set('billingSourceCompanyId', row.billingSourceCompanyId);
+    this.http.get<BpPaymentDetailResponse>('http://localhost:9000/api/bp-payments/details', { params }).subscribe({
+      next: detail => {
+        if (generation === this.bpPaymentDetailGeneration && this.activeView === 'bpPaymentList') this.selectedBpPaymentDetail = detail;
+      },
+      error: () => {
+        if (generation === this.bpPaymentDetailGeneration) this.bpPaymentMessage = 'BP請求明細の取得に失敗しました。';
+      }
+    });
+  }
+
+  closeBpPaymentDetail(): void {
+    this.bpPaymentDetailGeneration++;
+    this.selectedBpPaymentDetail = null;
   }
 
   searchSalesAnalysis(): void {
@@ -1442,21 +1522,21 @@ export class AppComponent implements OnInit {
         this.fiscalProfitStartMonth = response.fiscalStartMonth;
         this.fiscalProfitEndMonth = response.fiscalEndMonth;
         this.fiscalProfitMonths = response.months;
-        this.fiscalProfitRows = response.rows;
-        this.fiscalProfitCompanyTotal = this.amount(response.companyProfitTotal);
+        this.fiscalProfitWarnings = response.warnings ?? [];
+        this.fiscalProfitUnallocated = this.amount(response.unallocatedProfit);
         this.projectAffiliationProfitRows = response.projectAffiliationProfits ?? [];
         this.projectAffiliationProfitTotal = this.projectAffiliationProfitRows.reduce(
           (sum, row) => sum + this.amount(row.profitAmount),
           0
         );
-        this.fiscalProfitMessage = `${response.months.length}か月の利益を集計しました。`;
+        this.fiscalProfitMessage = `${response.months.length}か月の利益貢献を集計しました。割合は対象5名の配分合計を100％として計算しています。`;
       },
       error: () => {
         this.fiscalProfitStartMonth = '';
         this.fiscalProfitEndMonth = '';
         this.fiscalProfitMonths = [];
-        this.fiscalProfitRows = [];
-        this.fiscalProfitCompanyTotal = 0;
+        this.fiscalProfitWarnings = [];
+        this.fiscalProfitUnallocated = 0;
         this.projectAffiliationProfitRows = [];
         this.projectAffiliationProfitTotal = 0;
         this.fiscalProfitMessage = '決算期利益の取得に失敗しました。';
@@ -1476,6 +1556,12 @@ export class AppComponent implements OnInit {
             this.recruitmentAllowanceAmounts.set(`${employeeNo}\u0000${month}`, this.amount(amount));
           });
         });
+        this.specificAllowanceAmounts.clear();
+        Object.entries(response.specificAmounts ?? {}).forEach(([employeeNo, amounts]) => {
+          Object.entries(amounts).forEach(([month, amount]) => {
+            this.specificAllowanceAmounts.set(`${employeeNo}\u0000${month}`, this.amount(amount));
+          });
+        });
         this.rebuildAllowanceDisplayRows();
         this.allowanceAnalysisMessage = `${response.rows.length}名の担当者を集計しました。`;
       },
@@ -1485,21 +1571,22 @@ export class AppComponent implements OnInit {
     });
   }
 
-  saveAllowanceRecruitment(): void {
+  saveManualAllowances(): void {
     this.allowanceAnalysisMessage = '';
     const rows = this.allowanceAnalysisResults.map((row) => ({
       employeeNo: row.employeeNo,
       amounts: this.allowanceAnalysisMonths.map((month) => ({
         paymentMonth: month,
-        amount: this.recruitmentAllowanceAmounts.get(`${row.employeeNo}\u0000${month}`) ?? 0
+        recruitmentAllowance: this.recruitmentAllowanceAmounts.get(`${row.employeeNo}\u0000${month}`) ?? 0,
+        specificAllowance: this.specificAllowanceAmounts.get(`${row.employeeNo}\u0000${month}`) ?? 0
       }))
     }));
-    this.http.put(`${this.salesApiUrl}/allowance-analysis/recruitment`, { rows }).subscribe({
+    this.http.put(`${this.salesApiUrl}/allowance-analysis/manual`, { rows }).subscribe({
       next: () => {
-        this.allowanceAnalysisMessage = '募集手当を登録しました。';
+        this.allowanceAnalysisMessage = '募集手当・特定手当を登録しました。';
       },
       error: () => {
-        this.allowanceAnalysisMessage = '募集手当の登録に失敗しました。';
+        this.allowanceAnalysisMessage = '募集手当・特定手当の登録に失敗しました。';
       }
     });
   }
@@ -1508,20 +1595,35 @@ export class AppComponent implements OnInit {
     this.allowanceAnalysisDisplayResults = this.allowanceAnalysisResults.flatMap((row, rowIndex) => {
       const recruitmentMonthlyAmounts = row.monthlyAmounts.map((amount, index) => ({
         month: amount.month,
-        amount: this.recruitmentAllowanceAmount(row.employeeNo, index)
+        amount: this.manualAllowanceAmount(this.recruitmentAllowanceAmounts, row.employeeNo, index)
+      }));
+      const specificMonthlyAmounts = row.monthlyAmounts.map((amount, index) => ({
+        month: amount.month,
+        amount: this.manualAllowanceAmount(this.specificAllowanceAmounts, row.employeeNo, index)
       }));
       const salesTotal = row.monthlyAmounts.reduce((total, amount) => total + this.amount(amount.amount), 0);
       const recruitmentTotal = recruitmentMonthlyAmounts.reduce((total, amount) => total + this.amount(amount.amount), 0);
-      const employeeTotal = salesTotal + recruitmentTotal;
+      const specificTotal = specificMonthlyAmounts.reduce((total, amount) => total + this.amount(amount.amount), 0);
+      const employeeTotal = salesTotal + recruitmentTotal + specificTotal;
       return [
-        { ...row, isRecruitment: false, isEmployeeGroupStart: rowIndex > 0, employeeTotal },
+        { ...row, allowanceKind: 'sales' as const, isEmployeeGroupStart: rowIndex > 0, employeeTotal },
         {
           ...row,
           allowanceName: '募集手当',
           monthlyAmounts: recruitmentMonthlyAmounts,
           subtotal: recruitmentTotal,
           total: employeeTotal,
-          isRecruitment: true,
+          allowanceKind: 'recruitment' as const,
+          isEmployeeGroupStart: false,
+          employeeTotal
+        },
+        {
+          ...row,
+          allowanceName: '特定手当',
+          monthlyAmounts: specificMonthlyAmounts,
+          subtotal: specificTotal,
+          total: employeeTotal,
+          allowanceKind: 'specific' as const,
           isEmployeeGroupStart: false,
           employeeTotal
         }
@@ -1529,25 +1631,27 @@ export class AppComponent implements OnInit {
     });
   }
 
-  setRecruitmentAllowanceAmount(row: AllowanceDisplayRow, index: number, value: string | number): void {
+  setManualAllowanceAmount(row: AllowanceDisplayRow, index: number, value: string | number): void {
+    if (row.allowanceKind === 'sales') {
+      return;
+    }
     const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim());
     const amount = Number.isFinite(parsed) ? parsed : 0;
     const month = this.allowanceAnalysisMonths[index];
     if (!month) {
       return;
     }
-    this.recruitmentAllowanceAmounts.set(`${row.employeeNo}\u0000${month}`, amount);
+    const amounts = row.allowanceKind === 'recruitment' ? this.recruitmentAllowanceAmounts : this.specificAllowanceAmounts;
+    amounts.set(`${row.employeeNo}\u0000${month}`, amount);
     row.monthlyAmounts[index].amount = amount;
     const total = row.monthlyAmounts.reduce((sum, item) => sum + this.amount(item.amount), 0);
     row.subtotal = total;
-    const salesRow = this.allowanceAnalysisDisplayResults.find(
-      (item) => item.employeeNo === row.employeeNo && !item.isRecruitment
-    );
-    const employeeTotal = this.amount(salesRow?.subtotal) + total;
-    this.allowanceAnalysisDisplayResults
-      .filter((item) => item.employeeNo === row.employeeNo)
-      .forEach((item) => item.employeeTotal = employeeTotal);
-    row.total = employeeTotal;
+    const employeeRows = this.allowanceAnalysisDisplayResults.filter((item) => item.employeeNo === row.employeeNo);
+    const employeeTotal = employeeRows.reduce((sum, item) => sum + this.amount(item.subtotal), 0);
+    employeeRows.forEach((item) => {
+      item.employeeTotal = employeeTotal;
+      item.total = employeeTotal;
+    });
   }
 
   formatAllowanceAmount(value: number | null): string {
@@ -1555,10 +1659,11 @@ export class AppComponent implements OnInit {
   }
 
   private recruitmentAllowanceAmounts = new Map<string, number>();
+  private specificAllowanceAmounts = new Map<string, number>();
 
-  private recruitmentAllowanceAmount(employeeNo: string, monthIndex: number): number {
+  private manualAllowanceAmount(amounts: Map<string, number>, employeeNo: string, monthIndex: number): number {
     const month = this.allowanceAnalysisMonths[monthIndex];
-    return month === undefined ? 0 : this.recruitmentAllowanceAmounts.get(`${employeeNo}\u0000${month}`) ?? 0;
+    return month === undefined ? 0 : amounts.get(`${employeeNo}\u0000${month}`) ?? 0;
   }
 
   openAllowanceAnalysisDetails(row: AllowanceAnalysisRow, index: number): void {
@@ -2343,6 +2448,19 @@ export class AppComponent implements OnInit {
 
   amount(value: number | null | undefined): number {
     return value ?? 0;
+  }
+
+  overtimePayLabel(value: number | null | undefined): string {
+    return this.amount(value) < 0 ? '不足控除' : '残業代';
+  }
+
+  overtimeColumnLabel(rows: ReadonlyArray<{ overtimePay?: number | null; overtimeAmount?: number | null }>): string {
+    const isNegative = (row: { overtimePay?: number | null; overtimeAmount?: number | null }) =>
+      this.amount(row.overtimePay ?? row.overtimeAmount) < 0;
+    if (!rows.some(isNegative)) {
+      return '残業代';
+    }
+    return rows.every(isNegative) ? '不足控除' : '残業代／不足控除';
   }
 
   private isEmploymentInsuranceExemptEmployee(row: { employeeNo?: string | null }): boolean {

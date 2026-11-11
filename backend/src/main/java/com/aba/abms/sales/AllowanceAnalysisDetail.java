@@ -8,6 +8,8 @@ public record AllowanceAnalysisDetail(
     String engineerName,
     BigDecimal contractAmount,
     BigDecimal engineerUnitPrice,
+    String customerName,
+    BigDecimal profitAdjustment,
     BigDecimal allowanceAmount
 ) {
 }

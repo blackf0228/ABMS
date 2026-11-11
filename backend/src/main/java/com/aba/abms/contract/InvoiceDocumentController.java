@@ -207,7 +207,7 @@ public class InvoiceDocumentController {
     Path outputDirectory = projectRoot.resolve("output").resolve("請求書");
     Files.createDirectories(outputDirectory);
     String fileName = sanitizeFileName(
-        "請求書_" + compact(customerName) + "_" + currentMonth.format(FILE_MONTH_FORMAT) + ".xlsx");
+        "請求書_" + compact(InvoiceDocumentPolicy.invoiceCustomerName(customerName)) + "_" + currentMonth.format(FILE_MONTH_FORMAT) + ".xlsx");
     Path outputPath = outputDirectory.resolve(fileName);
     Path templatePath = projectRoot.getParent()
         .resolve("要件")
@@ -242,7 +242,7 @@ public class InvoiceDocumentController {
 
   private static void fillHeader(Sheet sheet, String customerName, YearMonth currentMonth, BigDecimal total) {
     replaceText(sheet, "【発行年月日】", currentMonth.atEndOfMonth().plusDays(1).format(DATE_FORMAT));
-    replaceText(sheet, "【取引先名】", customerName);
+    replaceText(sheet, "【取引先名】", InvoiceDocumentPolicy.invoiceCustomerName(customerName));
     InvoiceDocumentPolicy.fillPaymentDueDate(sheet, customerName, currentMonth);
     replaceNumber(sheet, "【合計結果】", total);
   }

@@ -88,27 +88,19 @@ http://localhost:4200
 
 ブラウザで上記URLを開き、ABMSの画面が表示されれば再起動完了です。
 
-## 5-1. コード変更後の再起動
+## 5-1. コード変更後の一括再起動
 
-JavaまたはAngularのソースを変更した場合は、DBを起動したままBackendとFrontendだけを再起動します。
-
-1. Backendを起動しているPowerShellで `Ctrl + C` を押します。
-2. Frontendを起動しているPowerShellで `Ctrl + C` を押します。
-3. Backend用PowerShellで、下記を再実行します。
+JavaまたはAngularのソースを変更した場合は、DBを起動したままBackendとFrontendをまとめて再起動できます。PowerShellまたはコマンドプロンプトから、ABMSフォルダで下記を実行します。
 
 ```powershell
-cd "C:\Users\black\Documents\Hello World\abms"
-.\scripts\start-backend.cmd
+.\scripts\restart-frontend-backend.cmd
 ```
 
-4. Frontend用PowerShellで、下記を再実行します。
+このバッチはポート9000と4200の使用プロセスを確認します。ABMSのBackend（このリポジトリのBackendから起動したJava）またはFrontend（このリポジトリのAngular CLI）と確認できたプロセスだけを終了し、既存の起動スクリプトを別ウィンドウで起動します。DBは停止しません。
 
-```powershell
-cd "C:\Users\black\Documents\Hello World\abms"
-.\scripts\start-frontend.cmd
-```
+ポートの使用プロセスをABMSと確認できない場合は、安全のため何も終了せず中断します。その場合は、該当プロセスを確認し、必要であれば起動元のウィンドウで `Ctrl + C` を押してから再実行してください。
 
-DBを停止していない場合、`start-database.cmd` の再実行は不要です。
+起動したBackend/Frontendのウィンドウは、ログ確認と個別停止に使えます。DBを停止していない場合、`start-database.cmd` の再実行は不要です。
 
 ## 6. CSVデータを再投入したい場合
 

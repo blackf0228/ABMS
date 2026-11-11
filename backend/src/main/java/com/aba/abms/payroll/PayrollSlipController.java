@@ -259,7 +259,7 @@ public class PayrollSlipController {
     rows.add(new Row("通勤手当", detail.commutingAllowance()));
     rows.add(new Row("管理手当", detail.managementAllowance()));
     rows.add(new Row("営業手当", BigDecimal.ZERO));
-    rows.add(new Row("残業代", detail.overtimePay()));
+    rows.add(new Row(amount(detail.overtimePay()).signum() < 0 ? "不足控除" : "残業代", detail.overtimePay()));
     rows.add(new Row("交通費精算", detail.transportationAdjustment()));
     if (!isZero(detail.advanceExpense())) {
       rows.add(new Row("立替経費", detail.advanceExpense()));

@@ -1,47 +1,25 @@
 package com.aba.abms.sales;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.YearMonth;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class ProjectAffiliationProfitCalculatorTest {
-
   @Test
-  void aggregatesByAffiliationAndExcludesSpecifiedContractorNames() {
-    List<ProjectAffiliationProfitCalculator.ContractProfitSource> contracts = List.of(
-        contract("0012", "山田 太郎", "田中 一郎", "500000", "400000", "2025-10-01", "2025-12-31"),
-        contract("0013", "佐藤 花子", "王 超", "900000", "100000", "2025-10-01", "2025-12-31"),
-        contract("0001", "王 超", "鈴木 次郎", "600000", "500000", "2025-11-01", "2025-11-30"));
-
-    List<ProjectAffiliationProfitRow> result = ProjectAffiliationProfitCalculator.calculate(
-        YearMonth.of(2025, 10),
-        YearMonth.of(2025, 12),
-        contracts);
-
-    assertThat(result).containsExactly(
-        new ProjectAffiliationProfitRow("0012", "山田 太郎", new BigDecimal("300000"), new BigDecimal("75.00")),
-        new ProjectAffiliationProfitRow("0001", "王 超", new BigDecimal("100000"), new BigDecimal("25.00")));
-  }
-
-  private static ProjectAffiliationProfitCalculator.ContractProfitSource contract(
-      String employeeNo,
-      String employeeName,
-      String contractorName,
-      String contractAmount,
-      String engineerUnitPrice,
-      String startDate,
-      String endDate) {
-    return new ProjectAffiliationProfitCalculator.ContractProfitSource(
-        employeeNo,
-        employeeName,
-        contractorName,
-        new BigDecimal(contractAmount),
-        new BigDecimal(engineerUnitPrice),
-        LocalDate.parse(startDate),
-        LocalDate.parse(endDate));
+  void allocatesActualProfitByOwnerAndProposer() {
+    var detail = new ProfitContributionDetail("2025-10", "B001", "技術者", "2", 1,
+        "0001", "0010", new BigDecimal("500000"), new BigDecimal("390000"),
+        new BigDecimal("10000"), new BigDecimal("100000"));
+    var result = ProjectAffiliationProfitCalculator.calculate(List.of(detail));
+    assertThat(result).hasSize(5);
+    var owner = result.stream().filter(row -> row.employeeNo().equals("0001")).findFirst().orElseThrow();
+    var proposer = result.stream().filter(row -> row.employeeNo().equals("0010")).findFirst().orElseThrow();
+    assertThat(owner.profitAmount()).isEqualByComparingTo("80000");
+    assertThat(owner.ownerContribution()).isEqualByComparingTo("80000");
+    assertThat(owner.percentage()).isEqualByComparingTo("80");
+    assertThat(proposer.profitAmount()).isEqualByComparingTo("20000");
+    assertThat(proposer.proposerContribution()).isEqualByComparingTo("20000");
+    assertThat(proposer.percentage()).isEqualByComparingTo("20");
   }
 }

@@ -26,6 +26,7 @@
         </button>
         <div class="nav-dropdown">
           <button type="button" (click)="switchView('salesList')">売上一覧</button>
+          <button type="button" (click)="switchView('bpPaymentList')">BP売上状況</button>
           <button type="button" (click)="switchView('salesAnalysis')">売上集計解析</button>
           <button type="button" (click)="switchView('profitAnalysis')">利益解析</button>
           <button type="button" (click)="switchView('fiscalProfitConfirmation')">利益最終確認</button>
@@ -206,6 +207,76 @@
             <td colspan="4" class="empty-row">検索結果がありません。</td>
           </tr>
         </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="content" *ngIf="activeView === 'bpPaymentList'">
+    <header class="page-header">
+      <p>売上管理</p>
+      <h1>BP売上状況</h1>
+    </header>
+
+    <p>BPからCMCソフトへの登録済み請求額を確認できます。振込済み・未払いの判定は含みません。</p>
+
+    <form class="form-grid sales-search-form" (ngSubmit)="searchBpPayments()">
+      <label>
+        開始年月
+        <input type="month" name="bpPaymentStartMonth" [(ngModel)]="bpPaymentSearchForm.startMonth" required>
+      </label>
+
+      <label>
+        終了年月
+        <input type="month" name="bpPaymentEndMonth" [(ngModel)]="bpPaymentSearchForm.endMonth" required>
+      </label>
+
+      <label>
+        請求元BP会社
+        <select name="bpPaymentBillingSourceCompanyId" [(ngModel)]="bpPaymentSearchForm.billingSourceCompanyId">
+          <option value="">すべて</option>
+          <option *ngFor="let customer of bpCompanyOptions" [value]="customer.companyId">
+            {{ customer.companyName }}
+          </option>
+        </select>
+      </label>
+
+      <div class="actions full">
+        <button type="submit">検索</button>
+      </div>
+    </form>
+
+    <div class="list-toolbar">
+      <p class="result-message" *ngIf="bpPaymentMessage">{{ bpPaymentMessage }}</p>
+    </div>
+
+    <div class="table-wrap sales-table-wrap">
+      <table class="sales-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>請求年月</th>
+            <th>請求元BP会社</th>
+            <th>BP請求額（円）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of bpPaymentResults">
+            <td>
+              <button type="button" class="link-button" (click)="openBpPaymentDetail(row)">
+                {{ row.no }}
+              </button>
+            </td>
+            <td>{{ row.billingMonth }}</td>
+            <td>{{ row.billingSourceCompanyName }}</td>
+            <td class="number">{{ row.billingAmount | number: '1.0-0' }}</td>
+          </tr>
+          <tr *ngIf="bpPaymentResults.length === 0">
+            <td colspan="4" class="empty-row">検索結果がありません。</td>
+          </tr>
+        </tbody>
+        <tfoot *ngIf="bpPaymentResults.length > 0">
+          <tr class="total-row"><td colspan="3">検索結果合計</td><td class="number">{{ bpPaymentTotal() | number: '1.0-0' }}</td></tr>
+        </tfoot>
       </table>
     </div>
   </section>
@@ -405,7 +476,7 @@
             <th>通勤手当</th>
             <th>管理手当</th>
             <th>交通費精算</th>
-            <th>残業代</th>
+            <th>{{ overtimeColumnLabel(salaryConditionRows) }}</th>
             <th>立替経費</th>
             <th>立替経費2</th>
             <th>その他項目名</th>
@@ -426,7 +497,10 @@
             <td><input type="number" [(ngModel)]="row.commutingAllowance" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
             <td><input type="number" [(ngModel)]="row.managementAllowance" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
             <td><input type="number" [(ngModel)]="row.transportationAdjustment" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
-            <td><input type="number" [(ngModel)]="row.overtimePay" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
+            <td>
+              <small *ngIf="(row.overtimePay ?? 0) < 0">不足控除</small>
+              <input type="number" [(ngModel)]="row.overtimePay" [attr.aria-label]="overtimePayLabel(row.overtimePay)" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()">
+            </td>
             <td><input type="number" [(ngModel)]="row.advanceExpense" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
             <td><input type="number" [(ngModel)]="row.advanceExpense2" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
             <td><input [(ngModel)]="row.otherItemName" (ngModelChange)="markSalaryConditionsDirty()" [disabled]="!isSalaryConditionEditable()"></td>
@@ -1256,57 +1330,34 @@
       <button type="button" (click)="loadFiscalProfitAnalysis()">再計算</button>
     </div>
 
-    <div class="fiscal-profit-summary" *ngIf="fiscalProfitMonths.length > 0">
-      <span>会社利益（決算期合計）</span>
-      <strong [class.negative-amount]="fiscalProfitCompanyTotal < 0">
-        {{ fiscalProfitCompanyTotal | number: '1.0-0' }} 円
-      </strong>
-    </div>
-
     <p class="result-message" *ngIf="fiscalProfitMessage">{{ fiscalProfitMessage }}</p>
-
-    <div class="table-wrap fiscal-profit-table-wrap">
-      <table class="fiscal-profit-table">
-        <thead>
-          <tr>
-            <th>項目</th>
-            <th *ngFor="let month of fiscalProfitMonths">{{ month.replace('-', '/') }}</th>
-            <th>合計</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let row of fiscalProfitRows" [class.fiscal-profit-row-highlight]="row.itemName === '会社利益'">
-            <th>{{ row.itemName }}</th>
-            <td class="number" *ngFor="let amount of row.monthlyAmounts">
-              {{ amount | number: '1.0-0' }}
-            </td>
-            <td class="number" [class.negative-amount]="(row.totalAmount ?? 0) < 0">
-              {{ row.totalAmount | number: '1.0-0' }}
-            </td>
-          </tr>
-          <tr *ngIf="fiscalProfitRows.length === 0">
-            <td [attr.colspan]="fiscalProfitMonths.length + 2" class="empty-row">集計結果がありません。</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <p>売上・支払実績から算出した利益を、案件所属80％・技術者提案者20％で配分しています。5名本人の稼働分は除外しています。</p>
+    <details *ngIf="fiscalProfitWarnings.length > 0">
+      <summary>確認が必要な明細：{{ fiscalProfitWarnings.length }}件（表示金額は集計可能な明細の暫定額です）</summary>
+      <ul><li *ngFor="let warning of fiscalProfitWarnings">{{ warning }}</li></ul>
+    </details>
+    <p *ngIf="fiscalProfitUnallocated !== 0">未配分利益：{{ fiscalProfitUnallocated | number: '1.0-0' }} 円</p>
 
     <section class="project-affiliation-profit-section">
       <div class="section-heading">
-        <h2>案件所属別利益</h2>
+        <h2>担当者別利益貢献</h2>
       </div>
       <div class="table-wrap project-affiliation-profit-wrap">
         <table class="project-affiliation-profit-table">
           <thead>
             <tr>
-              <th>案件所属</th>
-              <th>利益</th>
+              <th>担当者</th>
+              <th>案件所属分（80％）</th>
+              <th>提案者分（20％）</th>
+              <th>利益貢献合計</th>
               <th>割合</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let row of projectAffiliationProfitRows">
               <td>{{ row.projectAffiliation }}</td>
+              <td class="number">{{ row.ownerContribution | number: '1.0-0' }} 円</td>
+              <td class="number">{{ row.proposerContribution | number: '1.0-0' }} 円</td>
               <td class="number" [class.negative-amount]="(row.profitAmount ?? 0) < 0">
                 {{ row.profitAmount | number: '1.0-0' }} 円
               </td>
@@ -1315,16 +1366,16 @@
               </td>
             </tr>
             <tr *ngIf="projectAffiliationProfitRows.length === 0">
-              <td colspan="3" class="empty-row">対象となる案件所属がありません。</td>
+              <td colspan="5" class="empty-row">集計対象がありません。</td>
             </tr>
           </tbody>
           <tfoot *ngIf="projectAffiliationProfitRows.length > 0">
             <tr>
-              <th>合計</th>
+              <th colspan="3">合計</th>
               <td class="number" [class.negative-amount]="projectAffiliationProfitTotal < 0">
                 {{ projectAffiliationProfitTotal | number: '1.0-0' }} 円
               </td>
-              <td class="number">100.00%</td>
+              <td class="number">{{ projectAffiliationProfitTotal === 0 ? '0.00' : '100.00' }}%</td>
             </tr>
           </tfoot>
         </table>
@@ -1363,18 +1414,18 @@
         </thead>
         <tbody>
           <tr *ngFor="let row of allowanceAnalysisDisplayResults" [class.allowance-employee-separator]="row.isEmployeeGroupStart">
-            <td *ngIf="!row.isRecruitment" rowspan="2" class="allowance-employee-cell">
+            <td *ngIf="row.allowanceKind === 'sales'" rowspan="3" class="allowance-employee-cell">
               {{ row.employeeName || row.employeeNo }}
             </td>
             <td class="allowance-label-cell">{{ row.allowanceName }}</td>
             <td class="number allowance-month-cell" *ngFor="let amount of row.monthlyAmounts; let i = index">
-              <ng-container *ngIf="row.isRecruitment; else salesAllowanceAmount">
+              <ng-container *ngIf="row.allowanceKind !== 'sales'; else salesAllowanceAmount">
                 <input
                   type="text"
                   class="allowance-input"
-                  [name]="'recruitmentAllowance' + row.employeeNo + i"
+                  [name]="row.allowanceKind + 'Allowance' + row.employeeNo + i"
                   [ngModel]="amount.amount ?? 0"
-                  (ngModelChange)="setRecruitmentAllowanceAmount(row, i, $event)">
+                  (ngModelChange)="setManualAllowanceAmount(row, i, $event)">
               </ng-container>
               <ng-template #salesAllowanceAmount>
                 <ng-container *ngIf="(amount.amount ?? 0) !== 0; else zeroSalesAllowance">
@@ -1386,7 +1437,7 @@
               <ng-template #zeroSalesAllowance>0</ng-template>
             </td>
             <td class="number allowance-subtotal-cell">{{ row.subtotal | number: '1.0-1' }}</td>
-            <td *ngIf="!row.isRecruitment" rowspan="2" class="number allowance-total-cell">
+            <td *ngIf="row.allowanceKind === 'sales'" rowspan="3" class="number allowance-total-cell">
               {{ row.employeeTotal | number: '1.0-1' }}
             </td>
           </tr>
@@ -1398,7 +1449,7 @@
     </div>
 
     <div class="actions screen-actions allowance-actions">
-      <button type="button" (click)="saveAllowanceRecruitment()" [disabled]="allowanceAnalysisResults.length === 0">登録</button>
+      <button type="button" (click)="saveManualAllowances()" [disabled]="allowanceAnalysisResults.length === 0">登録</button>
     </div>
   </section>
 
@@ -1810,6 +1861,63 @@
     </section>
   </div>
 
+  <div class="modal-backdrop" *ngIf="selectedBpPaymentDetail as detail">
+    <section class="modal-panel sales-detail-modal" role="dialog" aria-modal="true" aria-label="BP請求明細">
+      <header class="modal-header">
+        <div>
+          <p>売上管理</p>
+          <h2>BP請求明細</h2>
+        </div>
+        <button type="button" class="modal-close" (click)="closeBpPaymentDetail()">×</button>
+      </header>
+
+      <div class="sales-detail-body">
+        <div class="detail-summary">
+          <div>
+            <span>請求元BP会社</span>
+            <strong>{{ detail.billingSourceCompanyName }}</strong>
+          </div>
+          <div>
+            <span>請求年月</span>
+            <strong>{{ detail.billingMonth }}</strong>
+          </div>
+        </div>
+
+        <div class="table-wrap sales-detail-table-wrap">
+          <table class="sales-detail-table">
+            <thead>
+              <tr>
+                <th>技術者名</th>
+                <th>区分</th>
+                <th>BP請求額（円）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of detail.items">
+                <td>{{ row.engineerName }}</td>
+                <td>{{ row.itemType === 'TRANSPORT' ? '交通費（消費税対象外）' : row.itemType === 'NON_TAX_ADJ' ? '支払調整（非課税）' : row.itemType === 'NON_TAX_BLANK' ? '請求（技術者未設定・非課税）' : 'BP請求' }}</td>
+                <td class="number">{{ row.billingAmount | number: '1.0-0' }}</td>
+              </tr>
+              <tr class="total-row">
+                <td>合計</td>
+                <td></td>
+                <td class="number">{{ salesDetailTotal(detail) | number: '1.0-0' }}</td>
+              </tr>
+              <tr *ngIf="detail.items.length === 0">
+                <td colspan="3" class="empty-row">BP請求明細がありません。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="actions modal-actions">
+          <button type="button" disabled>訂正</button>
+          <button type="button" class="secondary" (click)="closeBpPaymentDetail()">閉じる</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <div class="modal-backdrop" *ngIf="editingSalaryDetail as detail">
     <section class="modal-panel salary-detail-modal" role="dialog" aria-modal="true" aria-label="個別給与明細訂正">
       <header class="modal-header">
@@ -1950,7 +2058,7 @@
             <th>通勤手当</th>
             <th>管理手当</th>
             <th>交通費精算</th>
-            <th>残業代</th>
+            <th>{{ overtimeColumnLabel(payrollResults) }}</th>
             <th>立替経費</th>
             <th>立替経費2</th>
             <th>その他金額</th>
@@ -1970,7 +2078,7 @@
             <td class="number">{{ row.commutingAllowance | number: '1.0-0' }}</td>
             <td class="number">{{ row.managementAllowance | number: '1.0-0' }}</td>
             <td class="number">{{ row.transportationAdjustment | number: '1.0-0' }}</td>
-            <td class="number">{{ row.overtimePay | number: '1.0-0' }}</td>
+            <td class="number"><small *ngIf="(row.overtimePay ?? 0) < 0">不足控除 </small>{{ row.overtimePay | number: '1.0-0' }}</td>
             <td class="number">{{ row.advanceExpense | number: '1.0-0' }}</td>
             <td class="number">{{ row.advanceExpense2 | number: '1.0-0' }}</td>
             <td class="number">{{ row.otherAmount | number: '1.0-0' }}</td>
@@ -2016,7 +2124,7 @@
           <tr>
             <th>給与支給月</th>
             <th>契約単価</th>
-            <th>残業代</th>
+            <th>{{ overtimeColumnLabel(shareholderSalaryRows) }}</th>
             <th>基本給料</th>
             <th>立替費用2</th>
             <th>会社負担</th>
@@ -2030,7 +2138,8 @@
               <input type="text" [name]="'shareholderContract' + i" [ngModel]="formatShareholderAmount(row.contractAmount)" (ngModelChange)="setShareholderAmount(row, 'contractAmount', $event)">
             </td>
             <td>
-              <input type="text" [name]="'shareholderOvertime' + i" [ngModel]="formatShareholderAmount(row.overtimeAmount)" (ngModelChange)="setShareholderAmount(row, 'overtimeAmount', $event)">
+              <small *ngIf="(row.overtimeAmount ?? 0) < 0">不足控除</small>
+              <input type="text" [name]="'shareholderOvertime' + i" [attr.aria-label]="overtimePayLabel(row.overtimeAmount)" [ngModel]="formatShareholderAmount(row.overtimeAmount)" (ngModelChange)="setShareholderAmount(row, 'overtimeAmount', $event)">
             </td>
             <td>
               <input type="text" [name]="'shareholderBaseSalary' + i" [ngModel]="formatShareholderAmount(row.baseSalary)" (ngModelChange)="setShareholderAmount(row, 'baseSalary', $event)">
@@ -2089,7 +2198,7 @@
             <tr><td>通勤手当</td><td class="number">{{ detail.commutingAllowance | number: '1.0-0' }}</td></tr>
             <tr><td>管理手当</td><td class="number">{{ detail.managementAllowance | number: '1.0-0' }}</td></tr>
             <tr><td>営業手当</td><td class="number">0</td></tr>
-            <tr><td>残業代</td><td class="number">{{ detail.overtimePay | number: '1.0-0' }}</td></tr>
+            <tr><td>{{ overtimePayLabel(detail.overtimePay) }}</td><td class="number">{{ detail.overtimePay | number: '1.0-0' }}</td></tr>
             <tr><td>交通費精算</td><td class="number">{{ detail.transportationAdjustment | number: '1.0-0' }}</td></tr>
             <tr><td>立替経費</td><td class="number">{{ detail.advanceExpense | number: '1.0-0' }}</td></tr>
             <tr><td>立替経費2</td><td class="number">{{ detail.advanceExpense2 | number: '1.0-0' }}</td></tr>
@@ -2157,8 +2266,10 @@
                 <th>年月</th>
                 <th>契約番号</th>
                 <th>技術者</th>
+                <th>契約先</th>
                 <th>契約単価</th>
                 <th>技術者単価</th>
+                <th>利益調整</th>
                 <th>手当金額</th>
               </tr>
             </thead>
@@ -2167,12 +2278,14 @@
                 <td>{{ detail.month.replace('-', '/') }}</td>
                 <td>{{ detail.contractNo }}</td>
                 <td>{{ detail.engineerName }}</td>
+                <td>{{ detail.customerName }}</td>
                 <td class="number">{{ detail.contractAmount | number: '1.0-0' }}</td>
                 <td class="number">{{ detail.engineerUnitPrice | number: '1.0-0' }}</td>
+                <td class="number">{{ detail.profitAdjustment | number: '1.0-0' }}</td>
                 <td class="number">{{ detail.allowanceAmount | number: '1.1-1' }}</td>
               </tr>
               <tr *ngIf="allowanceAnalysisDetails.length === 0">
-                <td colspan="6" class="empty-row">該当する契約明細がありません。</td>
+                <td colspan="8" class="empty-row">該当する契約明細がありません。</td>
               </tr>
             </tbody>
           </table>

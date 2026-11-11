@@ -16,8 +16,14 @@ final class InvoiceDocumentPolicy {
   private static final String ALPHA_FORCE = "アルファフォース株式会社";
   private static final String HIGH_THINK_RESEARCH = "株式会社ハイシンク創研";
   private static final String SOFT_THINK = "ソフトシンク株式会社";
+  private static final String KAISEI_TECHNOLOGY = "開誠テクノロジー株式会社";
 
   private InvoiceDocumentPolicy() {
+  }
+
+  static String invoiceCustomerName(String customerName) {
+    return "アクセンチュア株式会社".equals(customerName == null ? "" : customerName.trim())
+        ? "アバナード株式会社" : customerName;
   }
 
   static LocalDate paymentDueDate(String customerName, YearMonth billingMonth) {
@@ -36,10 +42,12 @@ final class InvoiceDocumentPolicy {
     if (contractAmount == null || hour == null || hour <= 0) {
       return null;
     }
-    int roundingUnit = ALPHA_FORCE.equals(customerName == null ? "" : customerName.trim()) ? 100 : 10;
+    String normalizedCustomerName = customerName == null ? "" : customerName.trim();
+    int roundingUnit = ALPHA_FORCE.equals(normalizedCustomerName) ? 100 : 10;
+    RoundingMode roundingMode = KAISEI_TECHNOLOGY.equals(normalizedCustomerName)
+        ? RoundingMode.HALF_UP : RoundingMode.DOWN;
     return contractAmount
-        .divide(BigDecimal.valueOf(hour), 10, RoundingMode.DOWN)
-        .divide(BigDecimal.valueOf(roundingUnit), 0, RoundingMode.DOWN)
+        .divide(BigDecimal.valueOf(hour).multiply(BigDecimal.valueOf(roundingUnit)), 0, roundingMode)
         .multiply(BigDecimal.valueOf(roundingUnit));
   }
 

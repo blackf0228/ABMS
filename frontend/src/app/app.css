@@ -1064,7 +1064,7 @@ tbody tr:hover {
 
 .project-affiliation-profit-section {
   margin-top: 28px;
-  max-width: 820px;
+  max-width: 1100px;
 }
 
 .project-affiliation-profit-wrap {
@@ -1073,6 +1073,7 @@ tbody tr:hover {
 
 .project-affiliation-profit-table {
   border-collapse: collapse;
+  min-width: 760px;
   width: 100%;
 }
 
@@ -1228,8 +1229,9 @@ tbody tr:hover {
   width: 100%;
 }
 
-.allowance-detail-modal {
-  max-width: 1040px;
+.modal-panel.allowance-detail-modal {
+  max-width: 1180px;
+  width: min(1180px, 100%);
 }
 
 .allowance-detail-body {

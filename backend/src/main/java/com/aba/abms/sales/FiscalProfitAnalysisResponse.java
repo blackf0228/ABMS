@@ -7,7 +7,8 @@ public record FiscalProfitAnalysisResponse(
     String fiscalStartMonth,
     String fiscalEndMonth,
     List<String> months,
-    List<FiscalProfitAnalysisRow> rows,
-    BigDecimal companyProfitTotal,
-    List<ProjectAffiliationProfitRow> projectAffiliationProfits) {
+    List<ProjectAffiliationProfitRow> projectAffiliationProfits,
+    List<ProfitContributionDetail> details,
+    List<String> warnings,
+    BigDecimal unallocatedProfit) {
 }
